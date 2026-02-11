@@ -37,3 +37,22 @@ export function getYouTubeThumbnailUrl(
 export function getMuxThumbnailUrl(playbackId: string): string {
   return `https://image.mux.com/${playbackId}/thumbnail.jpg`;
 }
+
+/** Thumbnail URL for a single content item (YouTube or Mux) */
+export function getContentThumbnailUrl(content: {
+  content_type?: string;
+  video_url?: string;
+  mux_playback_id?: string | null;
+} | null | undefined): string | null {
+  if (!content) return null;
+  if (content.content_type === 'upload' && content.mux_playback_id) {
+    return getMuxThumbnailUrl(content.mux_playback_id);
+  }
+  if (content.video_url) {
+    return getYouTubeThumbnailUrl(content.video_url, 'high');
+  }
+  if (content.mux_playback_id) {
+    return getMuxThumbnailUrl(content.mux_playback_id);
+  }
+  return null;
+}

@@ -1,28 +1,77 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Design tokens: colors, spacing, typography, shadows.
+ * Follows mobile UI/UX best practices (44px touch targets, readable fonts, consistent spacing).
  */
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+const tintColorLight = '#2563eb';
+const tintColorDark = '#60a5fa';
+
+/** Spacing scale (4px base) */
+export const Spacing = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+} as const;
+
+/** Typography scale */
+export const Typography = {
+  caption: 11,
+  small: 12,
+  body: 14,
+  bodyLarge: 16,
+  title: 18,
+  titleLarge: 20,
+  headline: 22,
+  display: 26,
+} as const;
+
+/** Minimum touch target (44px per Apple HIG / Android) */
+export const TOUCH_TARGET_MIN = 44;
+
+/** Border radius */
+export const Radius = {
+  sm: 12,
+  md: 18,
+  lg: 22,
+  xl: 28,
+  full: 9999,
+} as const;
+
+/** Card shadow / elevation */
+export const Shadows = Platform.select({
+  ios: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  android: { elevation: 3 },
+  default: {},
+});
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
+    text: '#000',
+    background: '#f0f0f0',
+    card: '#fff',
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    icon: '#64748b',
+    tabIconDefault: '#64748b',
     tabIconSelected: tintColorLight,
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
+    text: '#fff',
+    background: '#0a0a0d',
+    card: '#1a1a1e',
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    icon: '#9ca3af',
+    tabIconDefault: '#9ca3af',
     tabIconSelected: tintColorDark,
   },
 };

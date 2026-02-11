@@ -38,14 +38,14 @@ export default function IndexScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0a7ea4" />
+        <ActivityIndicator size="large" color="#2563eb" />
       </View>
     );
   }
 
   return (
     <View style={styles.centered}>
-      <ActivityIndicator size="large" color="#0a7ea4" />
+      <ActivityIndicator size="large" color="#2563eb" />
     </View>
   );
 }
