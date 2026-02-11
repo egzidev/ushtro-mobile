@@ -146,9 +146,12 @@ export default function ProgramDetailScreen() {
     }
   };
 
+  const flatten = (arr: (object | null | undefined)[]) =>
+    StyleSheet.flatten(arr.filter((s): s is object => s != null));
+
   if (loading || !program) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+      <View style={flatten([styles.centered, { backgroundColor: colors.background }])}>
         <ActivityIndicator size="large" color={colors.tint} />
       </View>
     );
@@ -158,7 +161,7 @@ export default function ProgramDetailScreen() {
   const selectedDay = days[selectedDayIndex];
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={flatten([styles.container, { backgroundColor: colors.background }])}>
       <ScrollView contentContainerStyle={styles.content}>
         {days.length > 1 && (
           <ScrollView
@@ -171,16 +174,16 @@ export default function ProgramDetailScreen() {
               <TouchableOpacity
                 key={d.id}
                 onPress={() => setSelectedDayIndex(i)}
-                style={[
+                style={flatten([
                   styles.dayTab,
                   selectedDayIndex === i ? { backgroundColor: colors.tint } : null,
-                ]}
+                ])}
               >
                 <Text
-                  style={[
+                  style={flatten([
                     styles.dayTabText,
                     { color: selectedDayIndex === i ? '#fff' : colors.text },
-                  ]}
+                  ])}
                 >
                   {d.title || `Dita ${d.day_index + 1}`}
                 </Text>
@@ -192,25 +195,28 @@ export default function ProgramDetailScreen() {
         {selectedDay && (
           <View style={styles.dayContent}>
             {selectedDay.is_rest_day ? (
-              <Text style={[styles.restDay, { color: colors.text }]}>Ditë pushimi</Text>
+              <Text style={flatten([styles.restDay, { color: colors.text }])}>Ditë pushimi</Text>
             ) : (
               <>
                 {(selectedDay.program_exercises ?? []).map((ex) => {
                   const content = ex.content;
                   return (
-                    <View key={ex.id} style={[styles.exerciseCard, { borderColor: `${colors.tint}30` }]}>
-                      <Text style={[styles.exerciseTitle, { color: colors.text }]}>
+                    <View
+                      key={ex.id}
+                      style={flatten([styles.exerciseCard, { borderColor: `${colors.tint}30` }])}
+                    >
+                      <Text style={flatten([styles.exerciseTitle, { color: colors.text }])}>
                         {content?.title ?? 'Ushtrim'}
                       </Text>
                       <View style={styles.setsRow}>
-                        <Text style={[styles.meta, { color: colors.icon }]}>
+                        <Text style={flatten([styles.meta, { color: colors.icon }])}>
                           Sete: {ex.sets ?? '-'} · Përsëritje: {ex.reps ?? '-'} · Pushim: {ex.rest ?? '-'}
                         </Text>
                       </View>
                       {ex.program_exercise_sets?.length ? (
                         <View style={styles.setsList}>
                           {ex.program_exercise_sets.map((s, i) => (
-                            <Text key={i} style={[styles.setRow, { color: colors.text }]}>
+                            <Text key={i} style={flatten([styles.setRow, { color: colors.text }])}>
                               Set {s.set_index + 1}: {s.reps ?? '-'} reps, pushim {s.rest ?? '-'}
                             </Text>
                           ))}
@@ -218,7 +224,7 @@ export default function ProgramDetailScreen() {
                       ) : null}
                       {content && (content.video_url || content.mux_playback_id) ? (
                         <TouchableOpacity
-                          style={[styles.videoButton, { backgroundColor: colors.tint }]}
+                          style={flatten([styles.videoButton, { backgroundColor: colors.tint }])}
                           onPress={() => openVideo(content)}
                         >
                           <Text style={styles.videoButtonText}>Shiko videon</Text>
