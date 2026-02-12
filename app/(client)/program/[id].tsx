@@ -1,3 +1,13 @@
+import {
+  areAllDaysComplete,
+  finishWorkout,
+  getClientId,
+  getCurrentCycle,
+  getSetLogsForDay,
+  startExercise,
+  startWorkout as apiStartWorkout,
+  upsertSetLog,
+} from "@/lib/api/workout-tracking";
 import { Checkbox } from "@/components/ui/checkbox";
 import { MuxVideoPlayer } from "@/components/video/mux-video-player";
 import { Colors, Radius, Shadows, Spacing } from "@/constants/theme";
@@ -55,7 +65,7 @@ type ProgramDetail = {
 };
 
 export default function ProgramDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, day } = useLocalSearchParams<{ id: string; day?: string }>();
   const router = useRouter();
   const navigation = useNavigation();
   const colorScheme = useColorScheme();
@@ -66,7 +76,15 @@ export default function ProgramDetailScreen() {
   const [completedSets, setCompletedSets] = useState<Set<string>>(new Set());
   const [workoutStarted, setWorkoutStarted] = useState(false);
   const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
+  const [workoutSessionId, setWorkoutSessionId] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [exerciseSessionMap, setExerciseSessionMap] = useState<
+    Record<string, string>
+  >({});
+  const [workoutLoading, setWorkoutLoading] = useState(false);
+  const [viewingCycle, setViewingCycle] = useState<number | null>(null);
+  const [allDaysComplete, setAllDaysComplete] = useState(false);
+  const [clientId, setClientId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -77,14 +95,88 @@ export default function ProgramDetailScreen() {
     return () => clearInterval(interval);
   }, [workoutStarted, workoutStartTime]);
 
-  const startWorkout = () => {
-    setWorkoutStarted(true);
-    setWorkoutStartTime(Date.now());
+  // Load set logs when viewing a day (only when not in active workout)
+  useEffect(() => {
+    const days = program?.program_days ?? [];
+    const selDay = days[selectedDayIndex];
+    if (
+      !clientId ||
+      !program ||
+      !selDay ||
+      selDay.is_rest_day ||
+      viewingCycle === null ||
+      workoutSessionId
+    )
+      return;
+    (async () => {
+      const logs = await getSetLogsForDay(
+        clientId,
+        program.id,
+        selDay.id,
+        viewingCycle
+      );
+      const keys = new Set(
+        logs.map((l) => `${l.program_exercise_id}-${l.set_index}`)
+      );
+      setCompletedSets(keys);
+    })();
+  }, [
+    clientId,
+    program?.id,
+    program?.program_days,
+    selectedDayIndex,
+    viewingCycle,
+    workoutSessionId,
+  ]);
+
+  const startWorkout = async () => {
+    const days = program?.program_days ?? [];
+    const selDay = days[selectedDayIndex];
+    if (!program || !selDay || selDay.is_rest_day || !clientId) return;
+    setWorkoutLoading(true);
+    try {
+      const cycle =
+        viewingCycle ??
+        (await getCurrentCycle(clientId, program.id, days));
+      const sessionId = await apiStartWorkout(
+        clientId,
+        program.id,
+        selDay.id,
+        cycle
+      );
+      if (sessionId) {
+        setWorkoutSessionId(sessionId);
+        setWorkoutStarted(true);
+        setWorkoutStartTime(Date.now());
+      }
+    } finally {
+      setWorkoutLoading(false);
+    }
   };
-  const finishWorkout = () => {
-    setWorkoutStarted(false);
-    setWorkoutStartTime(null);
-    setElapsedSeconds(0);
+
+  const onFinishWorkout = async () => {
+    if (!workoutSessionId || !clientId || !program) return;
+    setWorkoutLoading(true);
+    try {
+      await finishWorkout(workoutSessionId);
+      setWorkoutSessionId(null);
+      setWorkoutStarted(false);
+      setWorkoutStartTime(null);
+      setElapsedSeconds(0);
+      setExerciseSessionMap({});
+      const days = program.program_days ?? [];
+      const cycle = await getCurrentCycle(clientId, program.id, days);
+      setViewingCycle(cycle);
+      const allComplete = await areAllDaysComplete(clientId, program.id, days);
+      setAllDaysComplete(allComplete);
+    } finally {
+      setWorkoutLoading(false);
+    }
+  };
+
+  const onRifillo = () => {
+    setSelectedDayIndex(0);
+    setCompletedSets(new Set());
   };
 
   const formatDuration = (sec: number) => {
@@ -93,13 +185,75 @@ export default function ProgramDetailScreen() {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const toggleSetComplete = (key: string) => {
+  const toggleSetComplete = async (
+    key: string,
+    programExerciseId: string,
+    setIndex: number
+  ) => {
+    if (!workoutStarted) return;
+    const willBeChecked = !completedSets.has(key);
     setCompletedSets((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (willBeChecked) next.add(key);
+      else next.delete(key);
       return next;
     });
+
+    if (workoutSessionId) {
+      let exerciseSessionId = exerciseSessionMap[programExerciseId];
+      if (!exerciseSessionId) {
+        exerciseSessionId =
+          (await startExercise(workoutSessionId, programExerciseId)) ?? "";
+        if (exerciseSessionId) {
+          setExerciseSessionMap((prev) => ({
+            ...prev,
+            [programExerciseId]: exerciseSessionId,
+          }));
+        }
+      }
+      if (exerciseSessionId) {
+        await upsertSetLog(exerciseSessionId, setIndex, willBeChecked);
+      }
+
+      if (willBeChecked && program && clientId) {
+        const days = program.program_days ?? [];
+        const selDay = days[selectedDayIndex];
+        if (selDay?.program_exercises) {
+          const allKeys = new Set<string>();
+          for (const ex of selDay.program_exercises) {
+            for (const s of ex.program_exercise_sets ?? []) {
+              allKeys.add(`${ex.id}-${s.set_index}`);
+            }
+          }
+          const nextCompleted = new Set(completedSets);
+          nextCompleted.add(key);
+          const allComplete =
+            allKeys.size > 0 &&
+            [...allKeys].every((k) => nextCompleted.has(k));
+          if (allComplete) {
+            setWorkoutLoading(true);
+            try {
+              await finishWorkout(workoutSessionId);
+              setWorkoutSessionId(null);
+              setWorkoutStarted(false);
+              setWorkoutStartTime(null);
+              setElapsedSeconds(0);
+              setExerciseSessionMap({});
+              const cycle = await getCurrentCycle(clientId, program.id, days);
+              setViewingCycle(cycle);
+              const allDone = await areAllDaysComplete(
+                clientId,
+                program.id,
+                days
+              );
+              setAllDaysComplete(allDone);
+            } finally {
+              setWorkoutLoading(false);
+            }
+          }
+        }
+      }
+    }
   };
 
   useEffect(() => {
@@ -186,6 +340,15 @@ export default function ProgramDetailScreen() {
         });
 
         setProgram({ ...prog, program_days: days });
+        setClientId(client.id);
+        const parsed = day != null && day !== "" ? parseInt(day, 10) : NaN;
+        if (!isNaN(parsed) && parsed >= 0) {
+          setSelectedDayIndex(Math.min(parsed, days.length - 1));
+        }
+        const cycle = await getCurrentCycle(client.id, prog.id, days);
+        setViewingCycle(cycle);
+        const allComplete = await areAllDaysComplete(client.id, prog.id, days);
+        setAllDaysComplete(allComplete);
         navigation.setOptions({
           title: (prog as ProgramDetail).name ?? "Detajet",
         });
@@ -272,6 +435,29 @@ export default function ProgramDetailScreen() {
               </TouchableOpacity>
             ))}
           </ScrollView>
+        )}
+
+        {allDaysComplete && (
+          <View
+            style={flatten([
+              styles.rifilloBanner,
+              { backgroundColor: `${colors.tint}15` },
+            ])}
+          >
+            <Text style={flatten([styles.rifilloText, { color: colors.text }])}>
+              Programi i përfunduar! Rifillo për të filluar një cikël të ri.
+            </Text>
+            <TouchableOpacity
+              onPress={onRifillo}
+              style={flatten([
+                styles.rifilloButton,
+                { backgroundColor: colors.tint },
+              ])}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.rifilloButtonText}>Rifillo programin</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {selectedDay && (
@@ -467,8 +653,13 @@ export default function ProgramDetailScreen() {
                                   checked={completedSets.has(
                                     `${ex.id}-${s.set_index}`,
                                   )}
+                                  disabled={!workoutStarted}
                                   onPress={() =>
-                                    toggleSetComplete(`${ex.id}-${s.set_index}`)
+                                    toggleSetComplete(
+                                      `${ex.id}-${s.set_index}`,
+                                      ex.id,
+                                      s.set_index
+                                    )
                                   }
                                 />
                               </View>
@@ -590,8 +781,9 @@ export default function ProgramDetailScreen() {
             </View>
             {workoutStarted ? (
               <TouchableOpacity
-                onPress={finishWorkout}
-                style={styles.finishButton}
+                onPress={onFinishWorkout}
+                disabled={workoutLoading}
+                style={[styles.finishButton, workoutLoading && { opacity: 0.6 }]}
                 activeOpacity={0.85}
               >
                 <Text style={styles.finishButtonText}>Përfundo</Text>
@@ -599,9 +791,11 @@ export default function ProgramDetailScreen() {
             ) : (
               <TouchableOpacity
                 onPress={startWorkout}
+                disabled={workoutLoading || selectedDay?.is_rest_day}
                 style={flatten([
                   styles.filloButton,
                   { backgroundColor: colors.tint },
+                  workoutLoading ? { opacity: 0.6 } : null,
                 ])}
                 activeOpacity={0.85}
               >
@@ -674,6 +868,27 @@ const styles = StyleSheet.create({
   dayTab: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
   dayTabText: { fontWeight: "600", fontSize: 14 },
   dayContent: { gap: 12 },
+  rifilloBanner: {
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: Radius.lg,
+    gap: 12,
+  },
+  rifilloText: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  rifilloButton: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: Radius.sm,
+  },
+  rifilloButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
+  },
   restDayRow: {
     flexDirection: "row",
     alignItems: "center",

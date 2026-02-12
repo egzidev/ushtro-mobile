@@ -8,11 +8,18 @@ import {
   type ClientProgramWithDetails,
 } from "@/lib/api/my-programs";
 import {
+  getClientId,
+  getProgramProgress,
+  type ProgramProgress,
+} from "@/lib/api/workout-tracking";
+import {
   getFirstVideoThumbnail,
   ProgramWithDays,
 } from "@/lib/utils/program-thumbnail";
 import { Link } from "expo-router";
-import { useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useState } from "react";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -34,6 +41,7 @@ export default function ClientDashboardScreen() {
     user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? null;
   const { width: screenWidth } = useWindowDimensions();
   const [programs, setPrograms] = useState<ClientProgramWithDetails[]>([]);
+  const [progressMap, setProgressMap] = useState<Record<string, ProgramProgress>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -45,6 +53,25 @@ export default function ClientDashboardScreen() {
     try {
       const data = await fetchMyPrograms();
       setPrograms(data);
+
+      const clientId = await getClientId();
+      if (!clientId) return;
+
+      const map: Record<string, ProgramProgress> = {};
+      for (const cp of data) {
+        const prog = cp.programs;
+        if (!prog?.program_days?.length) continue;
+        const days = [...prog.program_days].sort(
+          (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0)
+        );
+        const progress = await getProgramProgress(
+          clientId,
+          prog.id,
+          days.map((d) => ({ id: d.id, is_rest_day: d.is_rest_day }))
+        );
+        map[prog.id] = progress;
+      }
+      setProgressMap(map);
     } catch (e) {
       console.error(e);
     } finally {
@@ -53,9 +80,11 @@ export default function ClientDashboardScreen() {
     }
   };
 
-  useEffect(() => {
-    load();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -121,35 +150,80 @@ export default function ClientDashboardScreen() {
             decelerationRate="fast"
             contentContainerStyle={styles.carouselContent}
           >
-            {programs.map((cp) => (
-              <View
-                key={cp.id}
-                style={[styles.heroCardItem, { width: CARD_WIDTH, marginRight: CARD_MARGIN }]}
-              >
-                <ProgramHeroCard
-                  programId={cp.program_id}
-                  programName={cp.programs?.name ?? "Program"}
-                  todayDay={1}
-                  totalDays={cp.programs?.day_count ?? 0}
-                  exerciseCount={cp.programs?.exercise_count ?? 0}
-                  completedDays={0}
-                  imageUrl={
-                    getFirstVideoThumbnail(
-                      cp.programs as unknown as ProgramWithDays | null | undefined,
-                    ).imageUrl
-                  }
-                />
-              </View>
-            ))}
+            {programs.map((cp) => {
+              const prog = cp.programs;
+              const progress = prog ? progressMap[prog.id] : undefined;
+              const dayItems =
+                prog?.program_days != null
+                  ? [...prog.program_days]
+                      .sort(
+                        (a, b) =>
+                          (a.day_index ?? 0) - (b.day_index ?? 0)
+                      )
+                      .map((d) => ({ is_rest_day: d.is_rest_day }))
+                  : undefined;
+              const workoutDays =
+                dayItems != null
+                  ? dayItems.filter((d) => !d.is_rest_day).length
+                  : prog?.day_count ?? 0;
+              const totalDays = progress?.totalDays ?? workoutDays;
+              const nextDay1Based = progress
+                ? progress.nextDayIndex + 1
+                : 1;
+              return (
+                <View
+                  key={cp.id}
+                  style={[styles.heroCardItem, { width: CARD_WIDTH, marginRight: CARD_MARGIN }]}
+                >
+                  <ProgramHeroCard
+                    programId={cp.program_id}
+                    programName={prog?.name ?? "Program"}
+                    nextDay={nextDay1Based}
+                    totalDays={totalDays}
+                    exerciseCount={prog?.exercise_count ?? 0}
+                    completedDays={progress?.completedDays ?? 0}
+                    cycleIndex={progress?.cycleIndex ?? 0}
+                    allComplete={progress?.allComplete ?? false}
+                    nextDayIndex={progress?.nextDayIndex ?? 0}
+                    dayItems={dayItems}
+                    imageUrl={
+                      getFirstVideoThumbnail(
+                        prog as unknown as ProgramWithDays | null | undefined,
+                      ).imageUrl
+                    }
+                  />
+                </View>
+              );
+            })}
           </ScrollView>
         </View>
       ) : (
         <View
           style={StyleSheet.flatten([
             styles.empty,
-            { backgroundColor: colors.card },
+            {
+              backgroundColor:
+                colorScheme === "dark"
+                  ? "rgba(55,65,81,0.4)"
+                  : "rgba(243,244,246,0.9)",
+              borderWidth: 1,
+              borderColor: `${colors.icon}15`,
+              borderStyle: "dashed",
+            },
           ])}
         >
+          <View
+            style={StyleSheet.flatten([
+              styles.emptyIconWrap,
+              { backgroundColor: `${colors.tint}15` },
+            ])}
+          >
+            <MaterialIcons
+              name="fitness-center"
+              size={36}
+              color={colors.tint}
+            />
+          </View>
           <Text
             style={StyleSheet.flatten([
               styles.emptyTitle,
@@ -181,9 +255,33 @@ export default function ClientDashboardScreen() {
         <TouchableOpacity
           style={StyleSheet.flatten([
             styles.nutritionCard,
-            { backgroundColor: colors.card },
+            {
+              backgroundColor: hasNutrition
+                ? colors.card
+                : colorScheme === "dark"
+                  ? "rgba(55,65,81,0.4)"
+                  : "rgba(243,244,246,0.9)",
+              borderWidth: hasNutrition ? 0 : 1,
+              borderColor: `${colors.icon}15`,
+              borderStyle: "dashed",
+              alignItems: hasNutrition ? "stretch" : "center",
+            },
           ])}
         >
+          {!hasNutrition && (
+            <View
+              style={StyleSheet.flatten([
+                styles.emptyIconWrapSmall,
+                { backgroundColor: `${colors.tint}15` },
+              ])}
+            >
+              <MaterialIcons
+                name="restaurant"
+                size={24}
+                color={colors.tint}
+              />
+            </View>
+          )}
           <Text
             style={StyleSheet.flatten([
               styles.nutritionTitle,
@@ -210,7 +308,11 @@ export default function ClientDashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: Spacing.xxxl },
+  content: {
+    paddingTop: Spacing.xxxl,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xxxl + 16,
+  },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: Spacing.sm, fontSize: Typography.body },
   sectionTitle: {
@@ -230,14 +332,33 @@ const styles = StyleSheet.create({
   heroCardItem: {},
   empty: {
     borderRadius: Radius.lg,
-    padding: Spacing.xxl,
+    paddingVertical: Spacing.xxxl,
+    paddingHorizontal: Spacing.xxl,
     alignItems: "center",
+    minHeight: 140,
   },
-  emptyTitle: { fontWeight: "600", marginBottom: Spacing.xs },
-  emptySub: { fontSize: Typography.small },
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  emptyIconWrapSmall: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  emptyTitle: { fontWeight: "600", marginBottom: Spacing.xs, textAlign: "center" },
+  emptySub: { fontSize: Typography.small, textAlign: "center" },
   nutritionCard: {
     borderRadius: Radius.lg,
-    padding: Spacing.lg,
+    paddingVertical: Spacing.xxl,
+    paddingHorizontal: Spacing.lg,
     marginTop: Spacing.sm,
     minHeight: 44,
   },
