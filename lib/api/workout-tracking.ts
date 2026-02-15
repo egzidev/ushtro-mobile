@@ -421,12 +421,21 @@ export type WorkoutHistorySession = {
   thumbnailUrl: string | null;
 };
 
+export type WorkoutSessionDetailSet = {
+  setIndex: number;
+  reps: string | null;
+  rest: string | null;
+  isCompleted: boolean;
+};
+
 export type WorkoutSessionDetailExercise = {
   id: string;
   programExerciseId: string;
   title: string;
   completedSetsCount: number;
   totalSets: number;
+  thumbnailUrl: string | null;
+  sets: WorkoutSessionDetailSet[];
 };
 
 export type WorkoutSessionDetail = {
@@ -467,22 +476,27 @@ export async function getWorkoutHistory(): Promise<WorkoutHistoryProgram[]> {
   }
   if (!Array.isArray(raw)) return [];
 
-  return (raw as Array<{
+  return mapRawToHistory(raw as Parameters<typeof mapRawToHistory>[0]);
+}
+
+/** Flatten programs+sessions into raw session array for mapping */
+function mapRawToHistory(raw: Array<{
+  programId: string;
+  programName: string;
+  sessions: Array<{
+    id: string;
     programId: string;
     programName: string;
-    sessions: Array<{
-      id: string;
-      programId: string;
-      programName: string;
-      dayTitle: string;
-      dayIndex: number;
-      completedAt: string;
-      totalSeconds: number | null;
-      cycleIndex: number;
-      completedSetsCount: number;
-      thumbnailContent?: { video_url?: string; content_type?: string; mux_playback_id?: string | null } | null;
-    }>;
-  }>).map((p) => ({
+    dayTitle: string;
+    dayIndex: number;
+    completedAt: string;
+    totalSeconds: number | null;
+    cycleIndex: number;
+    completedSetsCount: number;
+    thumbnailContent?: { video_url?: string; content_type?: string; mux_playback_id?: string | null; mux_thumbnail_url?: string | null } | null;
+  }>;
+}>): WorkoutHistoryProgram[] {
+  return raw.map((p) => ({
     programId: p.programId,
     programName: p.programName,
     sessions: p.sessions.map((s) => ({
@@ -500,6 +514,45 @@ export async function getWorkoutHistory(): Promise<WorkoutHistoryProgram[]> {
         : null,
     })),
   }));
+}
+
+/**
+ * Fetch workout history for a specific date range (e.g. a week).
+ * Use for lazy loading when switching week tabs.
+ * Falls back to full fetch + client-side filter if RPC doesn't support date params (migration not applied).
+ */
+export async function getWorkoutHistoryForRange(
+  fromIso: string,
+  toIso: string
+): Promise<WorkoutHistoryProgram[]> {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) return [];
+
+  const { data: raw, error } = await supabase.rpc("get_workout_history", {
+    p_user_id: user.id,
+    p_from_date: fromIso,
+    p_to_date: toIso,
+  });
+
+  if (error) {
+    console.warn("get_workout_history range RPC failed, falling back to full fetch:", error.message);
+    const all = await getWorkoutHistory();
+    const fromTs = new Date(fromIso).getTime();
+    const toTs = new Date(toIso).getTime();
+    return all.map((p) => ({
+      ...p,
+      sessions: p.sessions.filter((s) => {
+        const t = new Date(s.completedAt).getTime();
+        return t >= fromTs && t <= toTs;
+      }),
+    })).filter((p) => p.sessions.length > 0);
+  }
+  if (!Array.isArray(raw)) return [];
+
+  return mapRawToHistory(raw as Parameters<typeof mapRawToHistory>[0]);
 }
 
 const sessionDetailCache = new Map<string, WorkoutSessionDetail>();
@@ -549,6 +602,8 @@ export async function getWorkoutSessionDetail(
       title: string;
       completedSetsCount: number;
       totalSets: number;
+      thumbnailContent?: { video_url?: string; content_type?: string; mux_playback_id?: string | null; mux_thumbnail_url?: string | null } | null;
+      sets?: Array<{ setIndex: number; reps: string | null; rest: string | null; isCompleted: boolean }>;
     }>;
   };
 
@@ -560,7 +615,17 @@ export async function getWorkoutSessionDetail(
     completedAt: d.completedAt,
     totalSeconds: d.totalSeconds,
     cycleIndex: d.cycleIndex ?? 0,
-    exercises: d.exercises ?? [],
+    exercises: (d.exercises ?? []).map((e) => ({
+      id: e.id,
+      programExerciseId: e.programExerciseId,
+      title: e.title,
+      completedSetsCount: e.completedSetsCount,
+      totalSets: e.totalSets,
+      thumbnailUrl: e.thumbnailContent
+        ? getContentThumbnailUrl(e.thumbnailContent)
+        : null,
+      sets: e.sets ?? [],
+    })),
   };
 
   sessionDetailCache.set(sessionId, result);

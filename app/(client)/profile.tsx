@@ -3,7 +3,8 @@ import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/use-auth';
 import { supabase } from '@/lib/supabase';
-import { Colors } from '@/constants/theme';
+import { useWorkoutStore } from '@/lib/stores/workout-store';
+import { Colors, PAGE_CONTENT_PADDING } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme, type ThemePreference } from '@/contexts/theme-context';
 
@@ -20,6 +21,8 @@ export default function ProfileScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const theme = useTheme();
 
+  const reset = useWorkoutStore((s) => s.reset);
+
   const handleLogout = () => {
     Alert.alert('Dilni', 'Jeni të sigurt që dëshironi të dilni?', [
       { text: 'Anulo', style: 'cancel' },
@@ -27,6 +30,7 @@ export default function ProfileScreen() {
         text: 'Dil',
         style: 'destructive',
         onPress: async () => {
+          reset();
           await supabase.auth.signOut();
           router.replace('/(auth)/login');
         },
@@ -85,7 +89,11 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32 },
+  content: {
+    paddingHorizontal: PAGE_CONTENT_PADDING,
+    paddingTop: PAGE_CONTENT_PADDING,
+    paddingBottom: 32,
+  },
   card: {
     borderRadius: 22,
     padding: 16,

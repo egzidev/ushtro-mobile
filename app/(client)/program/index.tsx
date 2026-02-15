@@ -1,16 +1,12 @@
 import { DayCard } from "@/components/day-card";
 import { RingStat } from "@/components/ring-stat";
-import { Colors, Radius, Spacing } from "@/constants/theme";
+import { Colors, PAGE_CONTENT_PADDING, Radius, Spacing, Typography } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import { fetchMyPrograms } from "@/lib/api/my-programs";
-import {
-  getClientId,
-  getProgramProgress,
-  type ProgramProgress,
-} from "@/lib/api/workout-tracking";
+import { useWorkoutStore } from "@/lib/stores/workout-store";
 import { getContentThumbnailUrl } from "@/lib/utils/video-url";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCallback, useMemo } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -39,52 +35,33 @@ export default function ProgramListScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const router = useRouter();
-  const [programId, setProgramId] = useState<string | null>(null);
-  const [days, setDays] = useState<Day[]>([]);
-  const [progress, setProgress] = useState<ProgramProgress | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const programs = useWorkoutStore((s) => s.programs);
+  const progressMap = useWorkoutStore((s) => s.progressMap);
+  const loading = useWorkoutStore((s) => s.loading);
+  const loadedOnce = useWorkoutStore((s) => s.loadedOnce);
+  const loadPrograms = useWorkoutStore((s) => s.loadPrograms);
+  const refreshing = useWorkoutStore((s) => s.refreshing);
 
-  const load = async () => {
-    try {
-      const data = await fetchMyPrograms();
-      const cp = data[0];
-      if (!cp?.programs) {
-        setProgramId(null);
-        setDays([]);
-        setProgress(null);
-        return;
-      }
-      const prog = cp.programs;
-      const sortedDays = [...(prog.program_days ?? [])].sort(
-        (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0),
-      ) as Day[];
+  const cp = programs[0];
+  const prog = cp?.programs;
+  const programId = cp?.program_id ?? null;
+  const programName = prog?.name ?? null;
+  const days = useMemo(
+    () =>
+      prog
+        ? ([...(prog.program_days ?? [])].sort(
+            (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0),
+          ) as Day[])
+        : [],
+    [prog]
+  );
+  const progress = programId && prog ? progressMap[prog.id] ?? null : null;
 
-      setProgramId(cp.program_id);
-      setDays(sortedDays);
-
-      const clientId = await getClientId();
-      if (clientId) {
-        const progProgress = await getProgramProgress(
-          clientId,
-          prog.id,
-          sortedDays.map((d) => ({ id: d.id, is_rest_day: d.is_rest_day })),
-        );
-        setProgress(progProgress);
-      } else {
-        setProgress(null);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      if (!loadedOnce) loadPrograms();
+    }, [loadedOnce, loadPrograms])
+  );
 
   if (loading) {
     return (
@@ -111,14 +88,19 @@ export default function ProgramListScreen() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={() => {
-            setRefreshing(true);
-            load();
-          }}
+          onRefresh={loadPrograms}
           tintColor={colors.tint}
         />
       }
     >
+      {programName && (
+        <Text
+          style={[styles.programTitle, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {programName}
+        </Text>
+      )}
       {progress && (
         <View style={styles.statsRow}>
           <RingStat
@@ -131,6 +113,7 @@ export default function ProgramListScreen() {
               ) || null
             }
             cycleIndex={progress.cycleIndex}
+            programName={programName ?? undefined}
           />
         </View>
       )}
@@ -170,9 +153,18 @@ export default function ProgramListScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32 },
+  content: {
+    paddingHorizontal: PAGE_CONTENT_PADDING,
+    paddingTop: PAGE_CONTENT_PADDING,
+    paddingBottom: Spacing.xxxl,
+  },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyText: { fontSize: 16 },
+  programTitle: {
+    fontSize: Typography.title,
+    fontWeight: "700",
+    marginBottom: Spacing.md,
+  },
   statsRow: {
     marginBottom: Spacing.lg,
   },

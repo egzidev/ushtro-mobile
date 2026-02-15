@@ -1,4 +1,10 @@
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import {
+  Colors,
+  PAGE_CONTENT_PADDING,
+  Radius,
+  Spacing,
+  Typography,
+} from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
@@ -15,12 +21,6 @@ export default function NutritionScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
     >
-      <Text style={[styles.title, { color: colors.text }]}>
-        Plani i Ushqimit
-      </Text>
-      <Text style={[styles.subtitle, { color: colors.icon }]}>
-        Plani juaj i ushqimit nga trajneri
-      </Text>
       {hasNutrition ? (
         <View style={[styles.card, { backgroundColor: colors.card }]}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>
@@ -67,7 +67,11 @@ export default function NutritionScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  content: { paddingTop: 32, paddingHorizontal: 16, paddingBottom: 48 },
+  content: {
+    paddingTop: 32,
+    paddingHorizontal: PAGE_CONTENT_PADDING,
+    paddingBottom: 48,
+  },
   title: { fontSize: 22, fontWeight: "700" },
   subtitle: { fontSize: 14, marginTop: 4, marginBottom: 20 },
   card: { borderRadius: 22, padding: 16 },

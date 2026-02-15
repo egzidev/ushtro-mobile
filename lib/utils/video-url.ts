@@ -43,8 +43,12 @@ export function getContentThumbnailUrl(content: {
   content_type?: string;
   video_url?: string;
   mux_playback_id?: string | null;
+  mux_thumbnail_url?: string | null;
 } | null | undefined): string | null {
   if (!content) return null;
+  if (content.mux_thumbnail_url && typeof content.mux_thumbnail_url === "string") {
+    return content.mux_thumbnail_url;
+  }
   if (content.content_type === 'upload' && content.mux_playback_id) {
     return getMuxThumbnailUrl(content.mux_playback_id);
   }

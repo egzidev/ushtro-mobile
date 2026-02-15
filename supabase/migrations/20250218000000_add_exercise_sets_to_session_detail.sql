@@ -1,0 +1,123 @@
+-- Add per-set details (reps, rest, isCompleted) to each exercise in get_workout_session_detail
+
+CREATE OR REPLACE FUNCTION get_workout_session_detail(p_session_id uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_result jsonb;
+  v_ws RECORD;
+BEGIN
+  SELECT
+    ws.id,
+    ws.program_id,
+    ws.program_day_id,
+    ws.completed_at,
+    ws.total_seconds,
+    ws.cycle_index,
+    p.name AS program_name,
+    pd.title AS day_title,
+    pd.day_index
+  INTO v_ws
+  FROM workout_sessions ws
+  JOIN programs p ON p.id = ws.program_id
+  JOIN program_days pd ON pd.id = ws.program_day_id
+  WHERE ws.id = p_session_id
+    AND ws.completed_at IS NOT NULL;
+
+  IF v_ws.id IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  WITH ex_sessions AS (
+    SELECT es.id AS exercise_session_id, es.program_exercise_id
+    FROM exercise_sessions es
+    WHERE es.workout_session_id = p_session_id
+  ),
+  completed_set_indices AS (
+    SELECT sl.exercise_session_id, sl.set_index
+    FROM set_logs sl
+    WHERE sl.exercise_session_id IN (SELECT exercise_session_id FROM ex_sessions)
+      AND sl.is_completed = true
+  ),
+  ex_with_meta AS (
+    SELECT
+      es.exercise_session_id,
+      es.program_exercise_id,
+      COALESCE((c.title)::text, 'Ushtrim') AS title,
+      COALESCE(
+        (SELECT COUNT(*) FROM program_exercise_sets pes WHERE pes.program_exercise_id = es.program_exercise_id),
+        0
+      )::int AS total_sets,
+      (SELECT COUNT(*) FROM completed_set_indices csi WHERE csi.exercise_session_id = es.exercise_session_id)::int AS completed_sets,
+      pe.exercise_order,
+      jsonb_build_object(
+        'video_url', c.video_url,
+        'content_type', c.content_type,
+        'mux_playback_id', c.mux_playback_id
+      ) AS thumbnail_content
+    FROM ex_sessions es
+    JOIN program_exercises pe ON pe.id = es.program_exercise_id
+    LEFT JOIN content c ON c.id = pe.content_id
+  ),
+  ex_sets AS (
+    SELECT
+      e.exercise_session_id,
+      e.program_exercise_id,
+      e.title,
+      e.total_sets,
+      e.completed_sets,
+      e.exercise_order,
+      e.thumbnail_content,
+      COALESCE(
+        (SELECT jsonb_agg(
+          jsonb_build_object(
+            'setIndex', pes.set_index,
+            'reps', pes.reps,
+            'rest', pes.rest,
+            'isCompleted', EXISTS (
+              SELECT 1 FROM completed_set_indices csi
+              WHERE csi.exercise_session_id = e.exercise_session_id
+                AND csi.set_index = pes.set_index
+            )
+          )
+          ORDER BY pes.set_index
+        )
+        FROM program_exercise_sets pes
+        WHERE pes.program_exercise_id = e.program_exercise_id),
+        '[]'::jsonb
+      ) AS sets
+    FROM ex_with_meta e
+  )
+  SELECT jsonb_build_object(
+    'id', v_ws.id,
+    'programId', v_ws.program_id,
+    'programName', COALESCE(v_ws.program_name, 'Program'),
+    'dayTitle', COALESCE(NULLIF(TRIM(v_ws.day_title), ''), 'Dita ' || (COALESCE(v_ws.day_index, 0) + 1)),
+    'completedAt', v_ws.completed_at,
+    'totalSeconds', v_ws.total_seconds,
+    'cycleIndex', COALESCE(v_ws.cycle_index, 0),
+    'exercises', COALESCE(
+      (SELECT jsonb_agg(
+        jsonb_build_object(
+          'id', e.exercise_session_id,
+          'programExerciseId', e.program_exercise_id,
+          'title', e.title,
+          'completedSetsCount', e.completed_sets,
+          'totalSets', GREATEST(e.total_sets, e.completed_sets),
+          'thumbnailContent', e.thumbnail_content,
+          'sets', e.sets
+        )
+        ORDER BY e.exercise_order
+      )
+      FROM ex_sets e),
+      '[]'::jsonb
+    )
+  )
+  INTO v_result;
+
+  RETURN v_result;
+END;
+$$;

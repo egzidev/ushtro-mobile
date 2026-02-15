@@ -41,10 +41,6 @@ export function DayCard({
       style={[
         styles.card,
         { backgroundColor: colors.card },
-        colorScheme === "dark" && {
-          borderWidth: 1,
-          borderColor: "rgba(255,255,255,0.02)",
-        },
         isSelected && { borderWidth: 2, borderColor: colors.tint },
       ]}
     >
@@ -143,11 +139,15 @@ export function DayCard({
                 </View>
               )}
               <LinearGradient
-                colors={[
-                  "rgba(0,0,0,0)",
-                  "rgba(0,0,0,0.3)",
-                  "rgba(0,0,0,0.30)",
-                ]}
+                colors={
+                  isCompleted
+                    ? [
+                        "rgba(34,197,94,0.1)",
+                        "rgba(0,0,0,0.25)",
+                        "rgba(0,0,0,0.75)",
+                      ]
+                    : ["rgba(0,0,0,0)", "rgba(0,0,0,0.3)", "rgba(0,0,0,0.75)"]
+                }
                 locations={[0, 0.5, 1]}
                 style={StyleSheet.absoluteFill}
                 pointerEvents="none"
@@ -176,25 +176,43 @@ export function DayCard({
                       <BlurView
                         intensity={60}
                         tint={colorScheme === "dark" ? "dark" : "light"}
-                        style={[styles.badgeBlur, styles.glassBadgeBorder]}
+                        style={[styles.badgeBlur, styles.glassBadgeBorder, { flexDirection: "row", alignItems: "center", gap: 6 }]}
                       >
+                        <MaterialIcons
+                          name="timer"
+                          size={14}
+                          color="#fff"
+                        />
                         <Text style={styles.badgeText}>
                           {formatWorkoutDuration(completedDurationSeconds)}
                         </Text>
                       </BlurView>
                     </View>
                   )}
+                  {isCompleted && (
+                    <View style={styles.badgeWrap}>
+                      <BlurView
+                        intensity={60}
+                        tint={colorScheme === "dark" ? "dark" : "light"}
+                        style={[
+                          styles.badgeBlur,
+                          styles.glassBadgeBorder,
+                          styles.completedBadge,
+                        ]}
+                      >
+                        <MaterialIcons
+                          name="check-circle"
+                          size={14}
+                          color="#22c55e"
+                        />
+                        <Text style={[styles.badgeText, { color: "#22c55e" }]}>
+                          Përfunduar
+                        </Text>
+                      </BlurView>
+                    </View>
+                  )}
                 </View>
               </View>
-              {isCompleted && (
-                <View style={styles.doneBadge} pointerEvents="none">
-                  <MaterialIcons
-                    name="check-circle"
-                    size={28}
-                    color="#22c55e"
-                  />
-                </View>
-              )}
             </>
           )}
         </View>
@@ -230,7 +248,7 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
   },
   title: {
-    fontSize: Typography.bodyLarge,
+    fontSize: Typography.titleLarge,
     fontWeight: "600",
     color: "#fff",
   },
@@ -254,6 +272,13 @@ const styles = StyleSheet.create({
   glassBadgeBorder: {
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.15)",
+  },
+  completedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderColor: "rgba(34,197,94,0.4)",
+    backgroundColor: "rgba(34,197,94,0.15)",
   },
   glassBadge: {
     paddingHorizontal: Spacing.sm,
@@ -340,10 +365,5 @@ const styles = StyleSheet.create({
     fontSize: Typography.small,
     color: "#fff",
     fontWeight: "600",
-  },
-  doneBadge: {
-    position: "absolute",
-    top: Spacing.sm,
-    right: Spacing.sm,
   },
 });

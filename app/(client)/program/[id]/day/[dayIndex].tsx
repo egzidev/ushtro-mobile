@@ -11,6 +11,7 @@ import {
   startExercise,
   upsertSetLog,
 } from "@/lib/api/workout-tracking";
+import { useWorkoutStore } from "@/lib/stores/workout-store";
 import { supabase } from "@/lib/supabase";
 import { getContentThumbnailUrl } from "@/lib/utils/video-url";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -78,18 +79,37 @@ export default function DayWorkoutScreen() {
   const [workoutStarted, setWorkoutStarted] = useState(false);
   const [workoutStartTime, setWorkoutStartTime] = useState<number | null>(null);
   const [workoutSessionId, setWorkoutSessionId] = useState<string | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [exerciseSessionMap, setExerciseSessionMap] = useState<Record<string, string>>({});
   const [workoutLoading, setWorkoutLoading] = useState(false);
   const [viewingCycle, setViewingCycle] = useState<number | null>(null);
 
+  const updateProgressForProgram = useWorkoutStore((s) => s.updateProgressForProgram);
+  const setActiveWorkout = useWorkoutStore((s) => s.setActiveWorkout);
+  const toggleCompletedSet = useWorkoutStore((s) => s.toggleCompletedSet);
+  const pauseActiveWorkout = useWorkoutStore((s) => s.pauseActiveWorkout);
+  const resumeActiveWorkout = useWorkoutStore((s) => s.resumeActiveWorkout);
+  const clearActiveWorkout = useWorkoutStore((s) => s.clearActiveWorkout);
+  const selDayId = program?.program_days?.[dayIdx]?.id;
+  const activeWorkout = useWorkoutStore((s) => {
+    if (!program?.id || !selDayId) return null;
+    return s.getActiveWorkoutForDay(program.id, selDayId);
+  });
+
+  const [timerTick, setTimerTick] = useState(0);
   useEffect(() => {
-    if (!workoutStarted || !workoutStartTime) return;
-    const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - workoutStartTime) / 1000));
-    }, 1000);
+    if (!activeWorkout || activeWorkout.pausedAt !== null) return;
+    const interval = setInterval(() => setTimerTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
-  }, [workoutStarted, workoutStartTime]);
+  }, [activeWorkout?.sessionId, activeWorkout?.pausedAt]);
+
+  const elapsedSeconds = activeWorkout
+    ? Math.floor(
+        (activeWorkout.pausedAt !== null
+          ? activeWorkout.pausedAt - activeWorkout.startTime - activeWorkout.totalPausedMs
+          : Date.now() - activeWorkout.startTime - activeWorkout.totalPausedMs
+        ) / 1000
+      )
+    : 0;
 
   useEffect(() => {
     const days = program?.program_days ?? [];
@@ -196,6 +216,13 @@ export default function DayWorkoutScreen() {
     load();
   }, [id]);
 
+  useEffect(() => {
+    if (activeWorkout && !workoutSessionId) {
+      setWorkoutSessionId(activeWorkout.sessionId);
+      setWorkoutStarted(true);
+    }
+  }, [activeWorkout?.sessionId, workoutSessionId]);
+
   const startWorkout = async () => {
     const days = program?.program_days ?? [];
     const selDay = days[dayIdx];
@@ -208,6 +235,16 @@ export default function DayWorkoutScreen() {
         setWorkoutSessionId(sessionId);
         setWorkoutStarted(true);
         setWorkoutStartTime(Date.now());
+        setActiveWorkout({
+          sessionId,
+          programId: program.id,
+          programDayId: selDay.id,
+          clientId,
+          startTime: Date.now(),
+          totalPausedMs: 0,
+          pausedAt: null,
+          completedSets: [],
+        });
       }
     } finally {
       setWorkoutLoading(false);
@@ -215,15 +252,50 @@ export default function DayWorkoutScreen() {
   };
 
   const onFinishWorkout = async () => {
-    if (!workoutSessionId || !clientId || !program) return;
+    if (!workoutSessionId || !clientId || !program || !activeWorkout) return;
     setWorkoutLoading(true);
     try {
+      const completedKeys = activeWorkout.completedSets;
+      const exSessionMap: Record<string, string> = {};
+
+      const resolveProgramExerciseId = new Map<string, string>();
+      for (const day of program.program_days ?? []) {
+        for (const ex of day.program_exercises ?? []) {
+          resolveProgramExerciseId.set(ex.id, ex.id);
+          if (ex.id.length > 8 && ex.id.includes("-")) {
+            resolveProgramExerciseId.set(ex.id.slice(0, 8), ex.id);
+          }
+        }
+      }
+
+      for (const key of completedKeys) {
+        const lastHyphen = key.lastIndexOf("-");
+        const programExerciseIdRaw = lastHyphen >= 0 ? key.slice(0, lastHyphen) : "";
+        const setIndexStr = lastHyphen >= 0 ? key.slice(lastHyphen + 1) : "";
+        const setIndex = parseInt(setIndexStr, 10);
+        if (!programExerciseIdRaw || Number.isNaN(setIndex)) continue;
+
+        const programExerciseId =
+          resolveProgramExerciseId.get(programExerciseIdRaw) ?? programExerciseIdRaw;
+
+        let exerciseSessionId = exSessionMap[programExerciseId];
+        if (!exerciseSessionId) {
+          exerciseSessionId =
+            (await startExercise(workoutSessionId, programExerciseId)) ?? "";
+          if (exerciseSessionId) exSessionMap[programExerciseId] = exerciseSessionId;
+        }
+        if (exerciseSessionId) {
+          await upsertSetLog(exerciseSessionId, setIndex, true);
+        }
+      }
+
       await finishWorkout(workoutSessionId);
+      await updateProgressForProgram(program.id);
       const sessionIdToShow = workoutSessionId;
+      clearActiveWorkout();
       setWorkoutSessionId(null);
       setWorkoutStarted(false);
       setWorkoutStartTime(null);
-      setElapsedSeconds(0);
       setExerciseSessionMap({});
       const days = program.program_days ?? [];
       const cycle = await getCurrentCycle(clientId, program.id, days);
@@ -240,58 +312,22 @@ export default function DayWorkoutScreen() {
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const toggleSetComplete = async (key: string, programExerciseId: string, setIndex: number) => {
+  const effectiveCompletedSets = activeWorkout
+    ? new Set(activeWorkout.completedSets)
+    : completedSets;
+
+  const toggleSetComplete = (key: string) => {
     if (!workoutStarted) return;
-    const willBeChecked = !completedSets.has(key);
-    setCompletedSets((prev) => {
-      const next = new Set(prev);
-      if (willBeChecked) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-
-    if (workoutSessionId) {
-      let exerciseSessionId = exerciseSessionMap[programExerciseId];
-      if (!exerciseSessionId) {
-        exerciseSessionId = (await startExercise(workoutSessionId, programExerciseId)) ?? "";
-        if (exerciseSessionId) {
-          setExerciseSessionMap((prev) => ({ ...prev, [programExerciseId]: exerciseSessionId }));
-        }
-      }
-      if (exerciseSessionId) {
-        await upsertSetLog(exerciseSessionId, setIndex, willBeChecked);
-      }
-
-      if (willBeChecked && program && clientId) {
-        const days = program.program_days ?? [];
-        const selDay = days[dayIdx];
-        if (selDay?.program_exercises) {
-          const allKeys = new Set<string>();
-          for (const ex of selDay.program_exercises) {
-            for (const s of ex.program_exercise_sets ?? []) {
-              allKeys.add(`${ex.id}-${s.set_index}`);
-            }
-          }
-          const nextCompleted = new Set(completedSets);
-          nextCompleted.add(key);
-          const allComplete = allKeys.size > 0 && [...allKeys].every((k) => nextCompleted.has(k));
-          if (allComplete) {
-            setWorkoutLoading(true);
-            try {
-              await finishWorkout(workoutSessionId);
-              const sessionIdToShow = workoutSessionId;
-              setWorkoutSessionId(null);
-              setWorkoutStarted(false);
-              setWorkoutStartTime(null);
-              setElapsedSeconds(0);
-              setExerciseSessionMap({});
-              router.replace(`/(client)/program/history/${sessionIdToShow}` as any);
-            } finally {
-              setWorkoutLoading(false);
-            }
-          }
-        }
-      }
+    if (activeWorkout) {
+      toggleCompletedSet(key);
+    } else {
+      const willBeChecked = !completedSets.has(key);
+      setCompletedSets((prev) => {
+        const next = new Set(prev);
+        if (willBeChecked) next.add(key);
+        else next.delete(key);
+        return next;
+      });
     }
   };
 
@@ -418,9 +454,9 @@ export default function DayWorkoutScreen() {
                           <View style={styles.setsTableCellCheck}>
                             <Checkbox
                               shape="circle"
-                              checked={completedSets.has(`${ex.id}-${s.set_index}`)}
+                              checked={effectiveCompletedSets.has(`${ex.id}-${s.set_index}`)}
                               disabled={!workoutStarted}
-                              onPress={() => toggleSetComplete(`${ex.id}-${s.set_index}`, ex.id, s.set_index)}
+                              onPress={() => toggleSetComplete(`${ex.id}-${s.set_index}`)}
                             />
                           </View>
                         </View>
@@ -481,14 +517,30 @@ export default function DayWorkoutScreen() {
               </Text>
             </View>
             {workoutStarted ? (
-              <TouchableOpacity
-                onPress={onFinishWorkout}
-                disabled={workoutLoading}
-                style={[styles.finishButton, workoutLoading && { opacity: 0.6 }]}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.finishButtonText}>Përfundo</Text>
-              </TouchableOpacity>
+              <View style={styles.workoutButtonsRow}>
+                <TouchableOpacity
+                  onPress={activeWorkout?.pausedAt ? resumeActiveWorkout : pauseActiveWorkout}
+                  style={styles.pauseButton}
+                  activeOpacity={0.85}
+                >
+                  <MaterialIcons
+                    name={activeWorkout?.pausedAt ? "play-arrow" : "pause"}
+                    size={24}
+                    color="#fff"
+                  />
+                  <Text style={styles.pauseButtonText}>
+                    {activeWorkout?.pausedAt ? "Vazhdo" : "Ndalo"}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={onFinishWorkout}
+                  disabled={workoutLoading}
+                  style={[styles.finishButton, workoutLoading && { opacity: 0.6 }]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.finishButtonText}>Përfundo</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <TouchableOpacity
                 onPress={startWorkout}
@@ -530,6 +582,17 @@ const styles = StyleSheet.create({
   },
   workoutTimerRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
   workoutTimer: { fontSize: 20, fontWeight: "700" },
+  workoutButtonsRow: { flexDirection: "row", alignItems: "center", gap: Spacing.sm },
+  pauseButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: 8,
+    backgroundColor: "#64748b",
+  },
+  pauseButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
   finishButton: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
@@ -552,7 +615,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   restDay: { fontSize: 16, textAlign: "center" },
-  exerciseCard: { borderRadius: 22, padding: 14, overflow: "hidden" },
+  exerciseCard: {
+    borderRadius: 22,
+    padding: 14,
+    overflow: "hidden",
+    marginBottom: Spacing.lg,
+  },
   exerciseTitle: { fontWeight: "700", fontSize: 16, marginTop: 6 },
   videoSection: { marginTop: -14, marginHorizontal: -14, marginBottom: 12 },
   videoThumbnailWrap: {

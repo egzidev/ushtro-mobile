@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   date: {
-    fontSize: Typography.medium,
+    fontSize: Typography.body,
     marginTop: Spacing.xs,
   },
   avatarWrap: {

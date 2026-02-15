@@ -232,7 +232,7 @@ export function ProgramHeroCard({
                           { color: colors.text },
                         ])}
                       >
-                        {cycleIndex}
+                        {cycleIndex + 1}
                       </Text>
                       <Text
                         style={RNStyleSheet.flatten([

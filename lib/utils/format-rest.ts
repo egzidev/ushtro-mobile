@@ -8,6 +8,44 @@ const SHORT_MONTHS_AL = [
   "Kor", "Gus", "Sht", "Tet", "Nën", "Dhj",
 ];
 
+/** Get Monday 00:00 and Sunday 23:59:59.999 for week at offset (0 = this week, -1 = last week) */
+export function getWeekBounds(weekOffset: number): { from: string; to: string } {
+  const now = new Date();
+  const day = now.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const thisMonday = new Date(now);
+  thisMonday.setDate(now.getDate() + mondayOffset);
+  thisMonday.setHours(0, 0, 0, 0);
+
+  const targetMonday = new Date(thisMonday);
+  targetMonday.setDate(thisMonday.getDate() + weekOffset * 7);
+  const targetSunday = new Date(targetMonday);
+  targetSunday.setDate(targetMonday.getDate() + 6);
+  targetSunday.setHours(23, 59, 59, 999);
+
+  return {
+    from: targetMonday.toISOString(),
+    to: targetSunday.toISOString(),
+  };
+}
+
+/** Format week label: "Kjo javë", "Java e kaluar", "11-17 Shk" */
+export function formatWeekLabel(weekOffset: number): string {
+  if (weekOffset === 0) return "Kjo javë";
+  if (weekOffset === -1) return "Java e kaluar";
+  const { from, to } = getWeekBounds(weekOffset);
+  const dFrom = new Date(from);
+  const dTo = new Date(to);
+  const dayFrom = dFrom.getDate();
+  const dayTo = dTo.getDate();
+  const monthFrom = SHORT_MONTHS_AL[dFrom.getMonth()];
+  const monthTo = SHORT_MONTHS_AL[dTo.getMonth()];
+  if (monthFrom === monthTo) {
+    return `${dayFrom}-${dayTo} ${monthFrom}`;
+  }
+  return `${dayFrom} ${monthFrom} - ${dayTo} ${monthTo}`;
+}
+
 /**
  * Format date as DD MMM (Albanian abbreviations, e.g. "05 Shk")
  */

@@ -1,27 +1,25 @@
 import { ClientHeaderBlock } from "@/components/header/client-header-block";
 import { NextWorkoutCard } from "@/components/next-workout-card";
 import { RingStat } from "@/components/ring-stat";
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import {
+  Colors,
+  PAGE_CONTENT_PADDING,
+  Radius,
+  Spacing,
+  Typography,
+} from "@/constants/theme";
 import { useAuth } from "@/hooks/use-auth";
 import { useColorScheme } from "@/hooks/use-color-scheme";
-import {
-  fetchMyPrograms,
-  type ClientProgramWithDetails,
-} from "@/lib/api/my-programs";
-import {
-  getClientId,
-  getProgramProgress,
-  type ProgramProgress,
-} from "@/lib/api/workout-tracking";
+import { useWorkoutStore } from "@/lib/stores/workout-store";
 import {
   getDayFirstExerciseThumbnail,
   getFirstVideoThumbnail,
   ProgramWithDays,
 } from "@/lib/utils/program-thumbnail";
-import { Link } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
-import { useCallback, useState } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useFocusEffect } from "@react-navigation/native";
+import { Link } from "expo-router";
+import { useCallback } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -40,51 +38,21 @@ export default function ClientDashboardScreen() {
     user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "";
   const avatarUrl =
     user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? null;
-  const [programs, setPrograms] = useState<ClientProgramWithDetails[]>([]);
-  const [progressMap, setProgressMap] = useState<Record<string, ProgramProgress>>({});
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = async () => {
-    try {
-      const data = await fetchMyPrograms();
-      setPrograms(data);
-
-      const clientId = await getClientId();
-      if (!clientId) return;
-
-      const map: Record<string, ProgramProgress> = {};
-      for (const cp of data) {
-        const prog = cp.programs;
-        if (!prog?.program_days?.length) continue;
-        const days = [...prog.program_days].sort(
-          (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0)
-        );
-        const progress = await getProgramProgress(
-          clientId,
-          prog.id,
-          days.map((d) => ({ id: d.id, is_rest_day: d.is_rest_day }))
-        );
-        map[prog.id] = progress;
-      }
-      setProgressMap(map);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const programs = useWorkoutStore((s) => s.programs);
+  const progressMap = useWorkoutStore((s) => s.progressMap);
+  const loading = useWorkoutStore((s) => s.loading);
+  const loadedOnce = useWorkoutStore((s) => s.loadedOnce);
+  const loadPrograms = useWorkoutStore((s) => s.loadPrograms);
+  const refreshing = useWorkoutStore((s) => s.refreshing);
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [])
+      if (!loadedOnce) loadPrograms();
+    }, [loadedOnce, loadPrograms]),
   );
 
   const onRefresh = () => {
-    setRefreshing(true);
-    load();
+    loadPrograms();
   };
 
   if (loading) {
@@ -127,39 +95,41 @@ export default function ClientDashboardScreen() {
     >
       <ClientHeaderBlock userName={userName} avatarUrl={avatarUrl} />
 
+      {programs.length > 0 &&
+        (() => {
+          const cp =
+            programs.find((c) => {
+              const prog = c.programs;
+              const p = prog ? progressMap[prog.id] : undefined;
+              return !p?.allComplete;
+            }) ?? programs[0];
+          const prog = cp?.programs;
+          const progress = prog ? progressMap[prog.id] : undefined;
+          return progress ? (
+            <View style={styles.statsRow}>
+              <RingStat
+                completedDays={progress.completedDays}
+                totalDays={progress.totalDays}
+                totalDurationSeconds={
+                  Object.values(
+                    progress.completedDayDurations ?? {},
+                  ).reduce<number>((acc, s) => acc + (s ?? 0), 0) || null
+                }
+                cycleIndex={progress.cycleIndex}
+                programName={prog?.name}
+              />
+            </View>
+          ) : null;
+        })()}
+
       <Text
         style={StyleSheet.flatten([
           styles.sectionTitle,
           { color: colors.text },
         ])}
       >
-        Ushtrimi yt i ardhshëm
+        Ushtrimi yt i radhës
       </Text>
-
-      {programs.length > 0 && (() => {
-        const cp = programs.find((c) => {
-          const prog = c.programs;
-          const p = prog ? progressMap[prog.id] : undefined;
-          return !p?.allComplete;
-        }) ?? programs[0];
-        const prog = cp?.programs;
-        const progress = prog ? progressMap[prog.id] : undefined;
-        return progress ? (
-          <View style={styles.statsRow}>
-            <RingStat
-              completedDays={progress.completedDays}
-              totalDays={progress.totalDays}
-              totalDurationSeconds={
-                Object.values(progress.completedDayDurations ?? {}).reduce<number>(
-                  (acc, s) => acc + (s ?? 0),
-                  0
-                ) || null
-              }
-              cycleIndex={progress.cycleIndex}
-            />
-          </View>
-        ) : null;
-      })()}
 
       {programs.length > 0 ? (
         (() => {
@@ -174,7 +144,7 @@ export default function ClientDashboardScreen() {
           const sortedDays =
             prog?.program_days != null
               ? [...prog.program_days].sort(
-                  (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0)
+                  (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0),
                 )
               : [];
           const nextDayIndex = progress?.nextDayIndex ?? 0;
@@ -182,18 +152,18 @@ export default function ClientDashboardScreen() {
           const isRestDay = day?.is_rest_day ?? false;
           const dayLabel = isRestDay
             ? "Dita e pushimit"
-            : (day?.title ||
-              day?.program_exercises?.find((e) => e?.content?.title)
-                ?.content?.title ||
-              `Dita ${nextDayIndex + 1}`);
+            : day?.title ||
+              day?.program_exercises?.find((e) => e?.content?.title)?.content
+                ?.title ||
+              `Dita ${nextDayIndex + 1}`;
           const exerciseCount = day?.program_exercises?.length ?? 0;
           const imageUrl =
             getDayFirstExerciseThumbnail(
               prog as unknown as ProgramWithDays | null | undefined,
-              nextDayIndex
+              nextDayIndex,
             ) ??
             getFirstVideoThumbnail(
-              prog as unknown as ProgramWithDays | null | undefined
+              prog as unknown as ProgramWithDays | null | undefined,
             ).imageUrl;
 
           return (
@@ -288,11 +258,7 @@ export default function ClientDashboardScreen() {
                 { backgroundColor: `${colors.tint}15` },
               ])}
             >
-              <MaterialIcons
-                name="restaurant"
-                size={24}
-                color={colors.tint}
-              />
+              <MaterialIcons name="restaurant" size={24} color={colors.tint} />
             </View>
           )}
           <Text
@@ -323,7 +289,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   content: {
     paddingTop: Spacing.xxxl,
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: PAGE_CONTENT_PADDING,
     paddingBottom: Spacing.xxxl + 16,
   },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -363,7 +329,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: Spacing.sm,
   },
-  emptyTitle: { fontWeight: "600", marginBottom: Spacing.xs, textAlign: "center" },
+  emptyTitle: {
+    fontWeight: "600",
+    marginBottom: Spacing.xs,
+    textAlign: "center",
+  },
   emptySub: { fontSize: Typography.small, textAlign: "center" },
   nutritionCard: {
     borderRadius: Radius.lg,

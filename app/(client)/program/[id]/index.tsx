@@ -6,9 +6,10 @@ import {
   getProgramProgress,
   type ProgramProgress,
 } from "@/lib/api/workout-tracking";
+import { useWorkoutStore } from "@/lib/stores/workout-store";
 import { getContentThumbnailUrl } from "@/lib/utils/video-url";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -46,12 +47,23 @@ export default function ProgramDayListScreen() {
   const navigation = useNavigation();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+  const programs = useWorkoutStore((s) => s.programs);
+  const progressMap = useWorkoutStore((s) => s.progressMap);
+  const loadPrograms = useWorkoutStore((s) => s.loadPrograms);
+  const loadedOnce = useWorkoutStore((s) => s.loadedOnce);
+  const refreshing = useWorkoutStore((s) => s.refreshing);
+
+  const storeProgram = useMemo(
+    () => programs.find((p) => p.program_id === id)?.programs ?? null,
+    [programs, id]
+  );
+  const storeProgress = id ? progressMap[id] ?? null : null;
+
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [progress, setProgress] = useState<ProgramProgress | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const load = async () => {
+  const loadFallback = async () => {
     if (!id) return;
     try {
       const {
@@ -121,20 +133,35 @@ export default function ProgramDayListScreen() {
       router.back();
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
+  const programDetail = program ?? (storeProgram ? { ...storeProgram, program_days: storeProgram.program_days ?? [] } as ProgramDetail : null);
+  const progressData = progress ?? storeProgress;
+
   useEffect(() => {
-    load();
-  }, [id]);
+    if (!id) return;
+    if (storeProgram && loadedOnce) {
+      setLoading(false);
+      setProgram(null);
+      setProgress(null);
+      return;
+    }
+    if (!loadedOnce) return;
+    loadFallback();
+  }, [id, storeProgram, loadedOnce]);
+
+  useEffect(() => {
+    if (!loadedOnce) loadPrograms();
+  }, [loadedOnce, loadPrograms]);
 
   const onRefresh = () => {
-    setRefreshing(true);
-    load();
+    loadPrograms();
   };
 
-  if (loading || !program) {
+  if (!id) return null;
+  const showLoader = !loadedOnce || (!programDetail && loading);
+  if (showLoader) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.tint} />
@@ -142,7 +169,13 @@ export default function ProgramDayListScreen() {
     );
   }
 
-  const days = program.program_days ?? [];
+  useEffect(() => {
+    if (programDetail?.name) {
+      navigation.setOptions({ title: programDetail.name ?? "Detajet" });
+    }
+  }, [programDetail?.name, navigation]);
+
+  const days = programDetail?.program_days ?? [];
 
   return (
     <ScrollView
@@ -156,18 +189,19 @@ export default function ProgramDayListScreen() {
         />
       }
     >
-      {progress && (
+      {progressData && (
         <View style={styles.statsRow}>
           <RingStat
-            completedDays={progress.completedDays}
-            totalDays={progress.totalDays}
+            completedDays={progressData.completedDays}
+            totalDays={progressData.totalDays}
             totalDurationSeconds={
-              Object.values(progress.completedDayDurations ?? {}).reduce<number>(
+              Object.values(progressData.completedDayDurations ?? {}).reduce<number>(
                 (acc, s) => acc + (s ?? 0),
                 0
               ) || null
             }
-            cycleIndex={progress.cycleIndex}
+            cycleIndex={progressData.cycleIndex}
+            programName={programDetail?.name}
           />
         </View>
       )}
@@ -183,7 +217,7 @@ export default function ProgramDayListScreen() {
               (d.is_rest_day ? "Dita e pushimit" : `Dita ${d.day_index + 1}`);
             const exCount = d.program_exercises?.length ?? 0;
             const isCompleted =
-              !d.is_rest_day && progress?.completedDayIds?.includes(d.id);
+              !d.is_rest_day && progressData?.completedDayIds?.includes(d.id);
 
             return (
               <View key={d.id} style={styles.dayCardItem}>
@@ -193,7 +227,7 @@ export default function ProgramDayListScreen() {
                   exerciseCount={exCount}
                   isRestDay={!!d.is_rest_day}
                   isCompleted={!!isCompleted}
-                  completedDurationSeconds={progress?.completedDayDurations?.[d.id]}
+                  completedDurationSeconds={progressData?.completedDayDurations?.[d.id]}
                   onPress={() =>
                     router.push(
                       `/(client)/program/${id}/day/${i}` as any,

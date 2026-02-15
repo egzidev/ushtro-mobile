@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import type { Route } from '@react-navigation/native';
@@ -19,12 +19,15 @@ export default function ClientTabLayout() {
   const colors = Colors[colorScheme ?? 'light'];
   const { user } = useAuth();
   const userName = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? '';
+  const router = useRouter();
 
   return (
     <Tabs
       screenOptions={({ route }) => ({
         tabBarActiveTintColor: colors.tabIconSelected,
         tabBarInactiveTintColor: colors.tabIconDefault,
+        headerStyle: { backgroundColor: 'transparent' },
+        headerShadowVisible: false,
         tabBarStyle: {
           backgroundColor: colors.card,
           display: getTabBarVisibility(route),
@@ -36,6 +39,7 @@ export default function ClientTabLayout() {
           <AppHeader
             title={options.title}
             greeting={route.name === 'index' && userName ? `Hi, ${userName}` : undefined}
+            largeTitle
           />
         ),
       })}
@@ -51,9 +55,10 @@ export default function ClientTabLayout() {
       />
       <Tabs.Screen
         name="program"
-        listeners={({ navigation }) => ({
-          tabPress: () => {
-            navigation.navigate('program', { screen: 'index' });
+        listeners={() => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            router.replace('/(client)/program');
           },
         })}
         options={{

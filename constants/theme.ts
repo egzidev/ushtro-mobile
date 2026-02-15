@@ -34,6 +34,9 @@ export const Typography = {
 /** Minimum touch target (44px per Apple HIG / Android) */
 export const TOUCH_TARGET_MIN = 44;
 
+/** Standard page content padding (matches Home, Ushtrimet, etc.) */
+export const PAGE_CONTENT_PADDING = Spacing.lg;
+
 /** Border radius */
 export const Radius = {
   sm: 12,

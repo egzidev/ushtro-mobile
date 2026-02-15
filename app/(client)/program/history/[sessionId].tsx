@@ -1,13 +1,23 @@
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import {
+  Colors,
+  PAGE_CONTENT_PADDING,
+  Radius,
+  Spacing,
+  Typography,
+} from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import type {
+  WorkoutSessionDetail,
+  WorkoutSessionDetailExercise,
+} from "@/lib/api/workout-tracking";
 import {
   getCachedSessionDetail,
   getWorkoutSessionDetail,
 } from "@/lib/api/workout-tracking";
-import type { WorkoutSessionDetail } from "@/lib/api/workout-tracking";
-import { formatDate, formatWorkoutDuration } from "@/lib/utils/format-rest";
+import { formatWorkoutDuration } from "@/lib/utils/format-rest";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useLocalSearchParams } from "expo-router";
+import { Image } from "expo-image";
+import { useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,18 +25,200 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 
+function StatItem({
+  label,
+  value,
+  textColor,
+  mutedColor,
+}: {
+  label: string;
+  value: string;
+  textColor: string;
+  mutedColor: string;
+}) {
+  return (
+    <View style={styles.statItem}>
+      <Text style={[styles.statLabel, { color: mutedColor }]}>{label}</Text>
+      <Text style={[styles.statValue, { color: textColor }]}>{value}</Text>
+    </View>
+  );
+}
+
+function ExerciseCard({
+  exercise,
+  textColor,
+  mutedColor,
+  tint,
+  cardBg,
+  isExpanded,
+  onPress,
+}: {
+  exercise: WorkoutSessionDetailExercise;
+  textColor: string;
+  mutedColor: string;
+  tint: string;
+  cardBg: string;
+  isExpanded: boolean;
+  onPress: () => void;
+}) {
+  const setsLabel =
+    exercise.totalSets > 0
+      ? `${exercise.completedSetsCount} / ${exercise.totalSets} sete`
+      : `${exercise.completedSetsCount} sete`;
+
+  const hasSets = exercise.sets && exercise.sets.length > 0;
+
+  return (
+    <View style={[styles.exerciseCard, { backgroundColor: cardBg }]}>
+      <TouchableOpacity
+        style={styles.exerciseCardTouchable}
+        onPress={onPress}
+        activeOpacity={0.8}
+      >
+        <View
+          style={[styles.exerciseThumb, { backgroundColor: mutedColor + "26" }]}
+        >
+          {exercise.thumbnailUrl ? (
+            <Image
+              source={{ uri: exercise.thumbnailUrl }}
+              style={styles.exerciseThumbImage}
+              contentFit="cover"
+            />
+          ) : (
+            <MaterialIcons name="fitness-center" size={28} color={tint} />
+          )}
+        </View>
+        <View style={styles.exerciseContent}>
+          <Text
+            style={[styles.exerciseTitle, { color: textColor }]}
+            numberOfLines={1}
+          >
+            {exercise.title}
+          </Text>
+          <Text style={[styles.setsText, { color: mutedColor }]}>
+            {setsLabel}
+          </Text>
+        </View>
+        {hasSets && (
+          <MaterialIcons
+            name={isExpanded ? "expand-less" : "chevron-right"}
+            size={24}
+            color={mutedColor}
+          />
+        )}
+      </TouchableOpacity>
+
+      {isExpanded && hasSets && (
+        <View
+          style={[
+            styles.setsTable,
+            {
+              backgroundColor: cardBg,
+              borderWidth: 1,
+              borderColor: mutedColor + "20",
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.setsTableHeader,
+              {
+                backgroundColor: mutedColor + "15",
+                borderBottomWidth: 1,
+                borderBottomColor: mutedColor + "20",
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.setsTableHeaderText,
+                styles.setsTableFirstCol,
+                { color: mutedColor },
+              ]}
+            >
+              Seti
+            </Text>
+            <Text style={[styles.setsTableHeaderText, { color: mutedColor }]}>
+              Përsëritje
+            </Text>
+            <Text style={[styles.setsTableHeaderText, { color: mutedColor }]}>
+              Pushim
+            </Text>
+            <View style={styles.setsTableHeaderCheck}>
+              <Text style={[styles.setsTableHeaderText, { color: mutedColor }]}>
+                ✓
+              </Text>
+            </View>
+          </View>
+          {exercise.sets!.map((s, i) => (
+            <View
+              key={s.setIndex}
+              style={[
+                styles.setsTableRow,
+                i > 0
+                  ? { borderTopWidth: 1, borderTopColor: mutedColor + "20" }
+                  : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.setsTableCell,
+                  styles.setsTableCellFirst,
+                  { color: textColor },
+                ]}
+              >
+                {s.setIndex}
+              </Text>
+              <Text style={[styles.setsTableCell, { color: textColor }]}>
+                {s.reps ?? "-"}
+              </Text>
+              <Text style={[styles.setsTableCell, { color: textColor }]}>
+                {s.rest ?? "-"}
+              </Text>
+              <View style={styles.setsTableCellCheck}>
+                {s.isCompleted ? (
+                  <MaterialIcons name="check-circle" size={20} color={tint} />
+                ) : (
+                  <View
+                    style={[
+                      styles.setsTableEmptyCheck,
+                      { borderColor: mutedColor },
+                    ]}
+                  />
+                )}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function WorkoutSessionDetailScreen() {
   const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const navigation = useNavigation();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+  const isDark = colorScheme === "dark";
   const [detail, setDetail] = useState<WorkoutSessionDetail | null>(() =>
-    sessionId ? getCachedSessionDetail(sessionId) : null
+    sessionId ? getCachedSessionDetail(sessionId) : null,
   );
-  const [loading, setLoading] = useState(() => !getCachedSessionDetail(sessionId ?? ""));
+  const [loading, setLoading] = useState(
+    () => !getCachedSessionDetail(sessionId ?? ""),
+  );
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedExerciseId, setExpandedExerciseId] = useState<string | null>(
+    null,
+  );
+
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedExerciseId((prev) => (prev === id ? null : id));
+  }, []);
 
   const load = useCallback(
     async (skipCache = false) => {
@@ -46,7 +238,7 @@ export default function WorkoutSessionDetailScreen() {
         setRefreshing(false);
       }
     },
-    [sessionId]
+    [sessionId],
   );
 
   useEffect(() => {
@@ -57,10 +249,22 @@ export default function WorkoutSessionDetailScreen() {
     }
   }, [sessionId, load]);
 
+  useEffect(() => {
+    if (detail) {
+      navigation.setOptions({
+        title: detail.dayTitle || "Historia e stërvitjes",
+      });
+    }
+  }, [detail, navigation]);
+
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     load(true);
   }, [load]);
+
+  const textColor = isDark ? "#fff" : "#1a1a1a";
+  const mutedColor = isDark ? "#9ca3af" : "#6b7280";
+  const cardBg = isDark ? "#1e1e24" : "#fff";
 
   if (loading) {
     return (
@@ -80,10 +284,16 @@ export default function WorkoutSessionDetailScreen() {
     );
   }
 
+  const workoutTitle = detail.dayTitle;
+  const totalTime = formatWorkoutDuration(detail.totalSeconds);
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[
+        styles.content,
+        { paddingHorizontal: PAGE_CONTENT_PADDING },
+      ]}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -92,63 +302,57 @@ export default function WorkoutSessionDetailScreen() {
         />
       }
     >
-      <View
-        style={[
-          styles.header,
-          {
-            backgroundColor: "#fff",
-          },
-        ]}
-      >
-        <Text style={[styles.programName, { color: colors.tint }]}>
-          {detail.programName}
-        </Text>
-        <Text style={[styles.dayTitle, { color: colors.text }]}>
-          {detail.dayTitle}
-        </Text>
-        <View style={styles.metaRow}>
-          <Text style={[styles.metaText, { color: colors.icon }]}>
-            {formatDate(detail.completedAt)}
-          </Text>
-          <Text style={[styles.metaText, { color: colors.icon }]}>
-            Kohëzgjatja: {formatWorkoutDuration(detail.totalSeconds)}
-          </Text>
-          {detail.cycleIndex > 0 && (
-            <Text style={[styles.metaText, { color: colors.icon }]}>
-              Java {detail.cycleIndex}
-            </Text>
-          )}
-        </View>
+      {/* Title */}
+      <Text style={[styles.pageTitle, { color: textColor }]}>
+        {workoutTitle}
+      </Text>
+
+      {/* Stats row */}
+      <View style={[styles.statsRow, { backgroundColor: "#fff" }]}>
+        <StatItem
+          label="Kohëzgjatja"
+          value={totalTime}
+          textColor={textColor}
+          mutedColor={mutedColor}
+        />
+        <StatItem
+          label="Vëllimi"
+          value="-"
+          textColor={textColor}
+          mutedColor={mutedColor}
+        />
+        <StatItem
+          label="Kalori"
+          value="-"
+          textColor={textColor}
+          mutedColor={mutedColor}
+        />
       </View>
 
-      <Text style={[styles.exercisesTitle, { color: colors.text }]}>
-        Ushtrimet
-      </Text>
+      {/* Social row - placeholder for future */}
+      {/* <View style={styles.socialRow}>
+        <MaterialIcons name="favorite-border" size={20} color={mutedColor} />
+        <Text style={[styles.socialCount, { color: mutedColor }]}>0</Text>
+        <MaterialIcons name="chat-bubble-outline" size={20} color={mutedColor} />
+        <Text style={[styles.socialCount, { color: mutedColor }]}>0</Text>
+      </View> */}
+
+      {/* Workout Log section */}
+      <View style={styles.logHeader}>
+        <Text style={[styles.logTitle, { color: textColor }]}>Ushtrimet</Text>
+      </View>
+
       {detail.exercises.map((ex) => (
-        <View
+        <ExerciseCard
           key={ex.id}
-          style={[
-            styles.exerciseCard,
-            {
-              backgroundColor: "#fff",
-            },
-          ]}
-        >
-          <View style={styles.exerciseRow}>
-            <MaterialIcons
-              name="fitness-center"
-              size={20}
-              color={colors.tint}
-              style={styles.exerciseIcon}
-            />
-            <Text style={[styles.exerciseTitle, { color: colors.text }]}>
-              {ex.title}
-            </Text>
-          </View>
-          <Text style={[styles.setsText, { color: colors.icon }]}>
-            {ex.completedSetsCount} / {ex.totalSets} sete
-          </Text>
-        </View>
+          exercise={ex}
+          textColor={textColor}
+          mutedColor={mutedColor}
+          tint={colors.tint}
+          cardBg={cardBg}
+          isExpanded={expandedExerciseId === ex.id}
+          onPress={() => toggleExpanded(ex.id)}
+        />
       ))}
     </ScrollView>
   );
@@ -157,51 +361,128 @@ export default function WorkoutSessionDetailScreen() {
 const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   container: { flex: 1 },
-  content: { padding: Spacing.lg, paddingBottom: Spacing.xxxl },
-  header: {
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
-    backgroundColor: "#fff",
+  content: {
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.xxxl,
   },
-  programName: {
+  pageTitle: {
+    fontSize: Typography.headline,
+    fontWeight: "700",
+    marginBottom: Spacing.lg,
+    lineHeight: 28,
+  },
+  statsRow: {
+    flexDirection: "row",
+    borderRadius: 14,
+    padding: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  statLabel: {
     fontSize: Typography.small,
-    fontWeight: "600",
-    textTransform: "uppercase",
     marginBottom: Spacing.xs,
   },
-  dayTitle: {
+  statValue: {
+    fontSize: Typography.bodyLarge,
+    fontWeight: "700",
+  },
+  logHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: Spacing.md,
+  },
+  logTitle: {
     fontSize: Typography.title,
     fontWeight: "700",
-    marginBottom: Spacing.sm,
-  },
-  metaRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.md,
-  },
-  metaText: { fontSize: Typography.small },
-  exercisesTitle: {
-    fontSize: Typography.bodyLarge,
-    fontWeight: "600",
-    marginBottom: Spacing.md,
   },
   exerciseCard: {
     borderRadius: Radius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.md,
-    backgroundColor: "#fff",
+    overflow: "hidden",
   },
-  exerciseRow: {
+  exerciseCardTouchable: {
     flexDirection: "row",
     alignItems: "center",
   },
-  exerciseIcon: { marginRight: Spacing.sm },
+  exerciseThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: Spacing.md,
+  },
+  exerciseThumbImage: { width: "100%", height: "100%" },
+  exerciseContent: {
+    flex: 1,
+    minWidth: 0,
+  },
   exerciseTitle: {
     fontSize: Typography.body,
     fontWeight: "600",
-    flex: 1,
   },
-  setsText: { fontSize: Typography.small, marginTop: Spacing.xs, marginLeft: 28 },
+  setsText: {
+    fontSize: Typography.small,
+    marginTop: Spacing.xs,
+  },
+  setsTable: {
+    marginTop: Spacing.md,
+    borderTopWidth: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  setsTableHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  setsTableHeaderText: {
+    flex: 1,
+    fontSize: Typography.small,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  setsTableFirstCol: {
+    flex: 0,
+    width: 40,
+  },
+  setsTableHeaderCheck: {
+    width: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  setsTableRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+  },
+  setsTableCell: {
+    flex: 1,
+    fontSize: Typography.body,
+    textAlign: "center",
+  },
+  setsTableCellFirst: {
+    flex: 0,
+    width: 40,
+  },
+  setsTableCellCheck: {
+    width: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  setsTableEmptyCheck: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+  },
   emptyText: { fontSize: Typography.body },
 });
