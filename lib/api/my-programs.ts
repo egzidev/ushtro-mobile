@@ -1,9 +1,10 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from "@/lib/supabase";
 
 export interface ClientProgramWithDetails {
   id: string;
   program_id: string;
   assigned_at: string;
+  start_date: string | null;
   locked: boolean;
   programs: {
     id: string;
@@ -36,20 +37,24 @@ export interface ClientProgramWithDetails {
 }
 
 export async function fetchMyPrograms(): Promise<ClientProgramWithDetails[]> {
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) throw new Error('Unauthorized');
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error("Unauthorized");
 
   const { data: client, error: clientError } = await supabase
-    .from('clients')
-    .select('id')
-    .eq('user_id', user.id)
+    .from("clients")
+    .select("id")
+    .eq("user_id", user.id)
     .single();
 
-  if (clientError || !client) throw new Error('Client not found');
+  if (clientError || !client) throw new Error("Client not found");
 
   const { data: clientPrograms, error: programsError } = await supabase
-    .from('client_programs')
-    .select(`
+    .from("client_programs")
+    .select(
+      `
       id,
       program_id,
       assigned_at,
@@ -78,47 +83,54 @@ export async function fetchMyPrograms(): Promise<ClientProgramWithDetails[]> {
           )
         )
       )
-    `)
-    .eq('client_id', client.id)
-    .order('assigned_at', { ascending: false });
+    `,
+    )
+    .eq("client_id", client.id)
+    .order("assigned_at", { ascending: false });
 
-  if (programsError) throw new Error('Failed to fetch programs');
+  if (programsError) throw new Error("Failed to fetch programs");
 
-  const result: ClientProgramWithDetails[] = (clientPrograms || []).map((cp: any) => {
-    const program = cp.programs;
-    let dayCount = 0;
-    let exerciseCount = 0;
-    let videoCount = 0;
+  const result: ClientProgramWithDetails[] = (clientPrograms || []).map(
+    (cp: any) => {
+      const program = cp.programs;
+      let dayCount = 0;
+      let exerciseCount = 0;
+      let videoCount = 0;
 
-    if (program?.program_days) {
-      dayCount = program.program_days.length;
-      for (const day of program.program_days) {
-        if (day.program_exercises) {
-          exerciseCount += day.program_exercises.length;
-          for (const ex of day.program_exercises) {
-            if (ex.content?.video_url || ex.content?.mux_playback_id) videoCount++;
-            if (ex.content?.content_type === 'youtube' && ex.content?.video_url) {
-              ex.content.videoPreviewUrl = ex.content.video_url;
-            } else if (ex.content?.mux_playback_id) {
-              ex.content.videoPreviewUrl = ex.content.mux_playback_id;
+      if (program?.program_days) {
+        dayCount = program.program_days.length;
+        for (const day of program.program_days) {
+          if (day.program_exercises) {
+            exerciseCount += day.program_exercises.length;
+            for (const ex of day.program_exercises) {
+              if (ex.content?.video_url || ex.content?.mux_playback_id)
+                videoCount++;
+              if (
+                ex.content?.content_type === "youtube" &&
+                ex.content?.video_url
+              ) {
+                ex.content.videoPreviewUrl = ex.content.video_url;
+              } else if (ex.content?.mux_playback_id) {
+                ex.content.videoPreviewUrl = ex.content.mux_playback_id;
+              }
             }
           }
         }
       }
-    }
 
-    return {
-      ...cp,
-      programs: program
-        ? {
-            ...program,
-            day_count: dayCount,
-            exercise_count: exerciseCount,
-            video_count: videoCount,
-          }
-        : null,
-    };
-  });
+      return {
+        ...cp,
+        programs: program
+          ? {
+              ...program,
+              day_count: dayCount,
+              exercise_count: exerciseCount,
+              video_count: videoCount,
+            }
+          : null,
+      };
+    },
+  );
 
   return result;
 }

@@ -1,5 +1,6 @@
 import { ClientHeaderBlock } from "@/components/header/client-header-block";
-import { ProgramHeroCard } from "@/components/program-hero-card";
+import { NextWorkoutCard } from "@/components/next-workout-card";
+import { RingStat } from "@/components/ring-stat";
 import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
 import { useAuth } from "@/hooks/use-auth";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -13,6 +14,7 @@ import {
   type ProgramProgress,
 } from "@/lib/api/workout-tracking";
 import {
+  getDayFirstExerciseThumbnail,
   getFirstVideoThumbnail,
   ProgramWithDays,
 } from "@/lib/utils/program-thumbnail";
@@ -27,7 +29,6 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -39,15 +40,10 @@ export default function ClientDashboardScreen() {
     user?.user_metadata?.full_name ?? user?.email?.split("@")[0] ?? "";
   const avatarUrl =
     user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? null;
-  const { width: screenWidth } = useWindowDimensions();
   const [programs, setPrograms] = useState<ClientProgramWithDetails[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, ProgramProgress>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const CARD_WIDTH = screenWidth * 0.85;
-  const CARD_MARGIN = 12;
-  const SNAP_INTERVAL = CARD_WIDTH + CARD_MARGIN;
 
   const load = async () => {
     try {
@@ -137,66 +133,83 @@ export default function ClientDashboardScreen() {
           { color: colors.text },
         ])}
       >
-        Programet e Mia
+        Ushtrimi yt i ardhshëm
       </Text>
 
+      {programs.length > 0 && (() => {
+        const cp = programs.find((c) => {
+          const prog = c.programs;
+          const p = prog ? progressMap[prog.id] : undefined;
+          return !p?.allComplete;
+        }) ?? programs[0];
+        const prog = cp?.programs;
+        const progress = prog ? progressMap[prog.id] : undefined;
+        return progress ? (
+          <View style={styles.statsRow}>
+            <RingStat
+              completedDays={progress.completedDays}
+              totalDays={progress.totalDays}
+              totalDurationSeconds={
+                Object.values(progress.completedDayDurations ?? {}).reduce<number>(
+                  (acc, s) => acc + (s ?? 0),
+                  0
+                ) || null
+              }
+              cycleIndex={progress.cycleIndex}
+            />
+          </View>
+        ) : null;
+      })()}
+
       {programs.length > 0 ? (
-        <View style={styles.carouselWrap}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={SNAP_INTERVAL}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            contentContainerStyle={styles.carouselContent}
-          >
-            {programs.map((cp) => {
-              const prog = cp.programs;
-              const progress = prog ? progressMap[prog.id] : undefined;
-              const dayItems =
-                prog?.program_days != null
-                  ? [...prog.program_days]
-                      .sort(
-                        (a, b) =>
-                          (a.day_index ?? 0) - (b.day_index ?? 0)
-                      )
-                      .map((d) => ({ is_rest_day: d.is_rest_day }))
-                  : undefined;
-              const workoutDays =
-                dayItems != null
-                  ? dayItems.filter((d) => !d.is_rest_day).length
-                  : prog?.day_count ?? 0;
-              const totalDays = progress?.totalDays ?? workoutDays;
-              const nextDay1Based = progress
-                ? progress.nextDayIndex + 1
-                : 1;
-              return (
-                <View
-                  key={cp.id}
-                  style={[styles.heroCardItem, { width: CARD_WIDTH, marginRight: CARD_MARGIN }]}
-                >
-                  <ProgramHeroCard
-                    programId={cp.program_id}
-                    programName={prog?.name ?? "Program"}
-                    nextDay={nextDay1Based}
-                    totalDays={totalDays}
-                    exerciseCount={prog?.exercise_count ?? 0}
-                    completedDays={progress?.completedDays ?? 0}
-                    cycleIndex={progress?.cycleIndex ?? 0}
-                    allComplete={progress?.allComplete ?? false}
-                    nextDayIndex={progress?.nextDayIndex ?? 0}
-                    dayItems={dayItems}
-                    imageUrl={
-                      getFirstVideoThumbnail(
-                        prog as unknown as ProgramWithDays | null | undefined,
-                      ).imageUrl
-                    }
-                  />
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
+        (() => {
+          const active = programs.find((cp) => {
+            const prog = cp.programs;
+            const progress = prog ? progressMap[prog.id] : undefined;
+            return !progress?.allComplete;
+          });
+          const cp = active ?? programs[0];
+          const prog = cp.programs;
+          const progress = prog ? progressMap[prog.id] : undefined;
+          const sortedDays =
+            prog?.program_days != null
+              ? [...prog.program_days].sort(
+                  (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0)
+                )
+              : [];
+          const nextDayIndex = progress?.nextDayIndex ?? 0;
+          const day = sortedDays[nextDayIndex];
+          const isRestDay = day?.is_rest_day ?? false;
+          const dayLabel = isRestDay
+            ? "Dita e pushimit"
+            : (day?.title ||
+              day?.program_exercises?.find((e) => e?.content?.title)
+                ?.content?.title ||
+              `Dita ${nextDayIndex + 1}`);
+          const exerciseCount = day?.program_exercises?.length ?? 0;
+          const imageUrl =
+            getDayFirstExerciseThumbnail(
+              prog as unknown as ProgramWithDays | null | undefined,
+              nextDayIndex
+            ) ??
+            getFirstVideoThumbnail(
+              prog as unknown as ProgramWithDays | null | undefined
+            ).imageUrl;
+
+          return (
+            <View style={styles.nextWorkoutWrap}>
+              <NextWorkoutCard
+                programId={cp.program_id}
+                programName={prog?.name ?? "Program"}
+                dayIndex={nextDayIndex}
+                dayLabel={dayLabel}
+                isRestDay={isRestDay}
+                imageUrl={imageUrl}
+                exerciseCount={exerciseCount}
+              />
+            </View>
+          );
+        })()
       ) : (
         <View
           style={StyleSheet.flatten([
@@ -321,15 +334,12 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xl,
     marginBottom: Spacing.md,
   },
-  carouselWrap: {
+  statsRow: {
     marginBottom: Spacing.md,
-    marginHorizontal: -Spacing.lg,
   },
-  carouselContent: {
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.sm,
+  nextWorkoutWrap: {
+    marginBottom: Spacing.lg,
   },
-  heroCardItem: {},
   empty: {
     borderRadius: Radius.lg,
     paddingVertical: Spacing.xxxl,

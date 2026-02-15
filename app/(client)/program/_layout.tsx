@@ -8,14 +8,18 @@ export default function ProgramLayout() {
         header: ({ route, options, navigation }) => (
           <AppHeader
             title={options.title as string}
-            showBack={route.name === '[id]'}
+            showBack={route.name === '[id]' || route.name?.startsWith('history/')}
             onBack={() => navigation.goBack()}
           />
         ),
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Programet' }} />
-      <Stack.Screen name="[id]" options={{ title: 'Detajet' }} />
+      <Stack.Screen name="index" options={{ title: 'Ushtrimet' }} />
+      <Stack.Screen name="[id]" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="history/[sessionId]"
+        options={{ title: 'Historia e stërvitjes' }}
+      />
     </Stack>
   );
 }

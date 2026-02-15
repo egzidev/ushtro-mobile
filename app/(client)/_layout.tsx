@@ -51,9 +51,14 @@ export default function ClientTabLayout() {
       />
       <Tabs.Screen
         name="program"
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            navigation.navigate('program', { screen: 'index' });
+          },
+        })}
         options={{
-          title: 'Programet',
-          tabBarLabel: 'Programet',
+          title: 'Ushtrimet',
+          tabBarLabel: 'Ushtrimet',
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="dumbbell.fill" color={color} />,
           headerShown: false,
         }}

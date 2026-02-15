@@ -1,3 +1,4 @@
+import { getContentThumbnailUrl } from "@/lib/utils/video-url";
 import { supabase } from "@/lib/supabase";
 
 type ProgramDayForCycle = { id: string; is_rest_day?: boolean };
@@ -99,6 +100,9 @@ export type ProgramProgress = {
   cycleIndex: number;
   allComplete: boolean;
   nextDayIndex: number; // 0-based index of next incomplete day
+  completedDayIds: string[];
+  /** Duration in seconds for each completed day (program_day_id -> total_seconds) */
+  completedDayDurations: Record<string, number | null>;
 };
 
 export async function getProgramProgress(
@@ -106,12 +110,10 @@ export async function getProgramProgress(
   programId: string,
   programDays: ProgramDayForCycle[]
 ): Promise<ProgramProgress> {
-  const nonRestDays = programDays
-    .filter((d) => !d.is_rest_day)
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const nonRestDays = programDays.filter((d) => !d.is_rest_day);
   const totalDays = nonRestDays.length;
   if (totalDays === 0) {
-    return { completedDays: 0, totalDays: 0, cycleIndex: 0, allComplete: false, nextDayIndex: 0 };
+    return { completedDays: 0, totalDays: 0, cycleIndex: 0, allComplete: false, nextDayIndex: 0, completedDayIds: [], completedDayDurations: {} };
   }
 
   const cycle = await getCurrentCycle(clientId, programId, programDays);
@@ -120,10 +122,11 @@ export async function getProgramProgress(
   const cycleForSquares = allComplete ? cycle : prevCycle;
   let query = supabase
     .from("workout_sessions")
-    .select("program_day_id")
+    .select("program_day_id, total_seconds")
     .eq("client_id", clientId)
     .eq("program_id", programId)
-    .not("completed_at", "is", null);
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false });
   if (cycleForSquares === 0) {
     query = query.or("cycle_index.eq.0,cycle_index.is.null");
   } else {
@@ -131,9 +134,14 @@ export async function getProgramProgress(
   }
   const { data: sessions } = await query;
 
-  const completedDayIds = new Set(
-    (sessions ?? []).map((s) => s.program_day_id)
-  );
+  const completedDayIds = new Set<string>();
+  const completedDayDurations: Record<string, number | null> = {};
+  for (const s of sessions ?? []) {
+    if (!completedDayIds.has(s.program_day_id)) {
+      completedDayIds.add(s.program_day_id);
+      completedDayDurations[s.program_day_id] = s.total_seconds ?? null;
+    }
+  }
   const completedDays = nonRestDays.filter((d) => completedDayIds.has(d.id)).length;
 
   let nextDayId: string | null = null;
@@ -155,7 +163,135 @@ export async function getProgramProgress(
     cycleIndex: prevCycle,
     allComplete,
     nextDayIndex: safeNextIndex,
+    completedDayIds: Array.from(completedDayIds),
+    completedDayDurations,
   };
+}
+
+/** Returns YYYY-MM-DD dates when user completed workouts for this program (current cycle only) */
+export async function getTrainedDatesForProgram(
+  clientId: string,
+  programId: string,
+  cycleIndex: number = 0
+): Promise<string[]> {
+  const info = await getWorkoutScheduleForProgram(clientId, programId, cycleIndex);
+  return info.trainedDates;
+}
+
+/**
+ * Returns trained dates + last completion date per cycle.
+ * - trainedDates: only dates in the current cycle (for green checks - resets each cycle)
+ * - lastCompletionDate: most recent completion in this cycle, or null if new cycle
+ * - globalLastCompletion: most recent across all cycles (for nextWorkoutDate)
+ */
+export async function getWorkoutScheduleForProgram(
+  clientId: string,
+  programId: string,
+  cycleIndex: number
+): Promise<{
+  trainedDates: string[];
+  lastCompletionDate: string | null;
+  globalLastCompletion: string | null;
+}> {
+  const { data: allSessions, error: allError } = await supabase
+    .from("workout_sessions")
+    .select("completed_at, cycle_index")
+    .eq("client_id", clientId)
+    .eq("program_id", programId)
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false });
+
+  if (allError || !allSessions?.length) {
+    return {
+      trainedDates: [],
+      lastCompletionDate: null,
+      globalLastCompletion: null,
+    };
+  }
+
+  const cycleSessions = allSessions.filter((s) => {
+    const c = s.cycle_index ?? 0;
+    return cycleIndex === 0 ? c === 0 : c === cycleIndex;
+  });
+
+  const cycleDates = new Set<string>();
+  let lastInCycle: string | null = null;
+  for (const s of cycleSessions) {
+    const at = s.completed_at;
+    if (typeof at === "string") {
+      const d = new Date(at);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const dateStr = `${y}-${m}-${day}`;
+      cycleDates.add(dateStr);
+      if (!lastInCycle) lastInCycle = dateStr;
+    }
+  }
+
+  const first = allSessions[0];
+  let globalLast: string | null = null;
+  if (first?.completed_at && typeof first.completed_at === "string") {
+    const d = new Date(first.completed_at);
+    globalLast = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  return {
+    trainedDates: Array.from(cycleDates),
+    lastCompletionDate: lastInCycle,
+    globalLastCompletion: globalLast,
+  };
+}
+
+/**
+ * Golden Rule: Next Workout Date = Last Completion Date + 1 Day
+ * Returns the most recent completion date (YYYY-MM-DD) for this program, or null if none.
+ */
+export async function getLastCompletionDate(
+  clientId: string,
+  programId: string
+): Promise<string | null> {
+  const { data: sessions, error } = await supabase
+    .from("workout_sessions")
+    .select("completed_at")
+    .eq("client_id", clientId)
+    .eq("program_id", programId)
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false })
+    .limit(1);
+
+  if (error || !sessions?.length) return null;
+  const at = sessions[0].completed_at;
+  if (typeof at !== "string") return null;
+  const d = new Date(at);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Returns next workout date (YYYY-MM-DD) per Golden Rule:
+ * nextWorkoutDate = lastCompletionDate + 1 day, or programStartDate if no completions.
+ */
+export function getNextWorkoutDate(
+  lastCompletionDate: string | null,
+  programStartDate: string | null
+): string {
+  if (lastCompletionDate) {
+    const d = new Date(lastCompletionDate + "T12:00:00");
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+  if (programStartDate) return programStartDate.slice(0, 10);
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export async function areAllDaysComplete(
@@ -270,6 +406,165 @@ export async function finishExercise(
     .eq("id", exerciseSessionId);
 
   return !error;
+}
+
+export type WorkoutHistorySession = {
+  id: string;
+  programId: string;
+  programName: string;
+  dayTitle: string;
+  dayIndex: number;
+  completedAt: string;
+  totalSeconds: number | null;
+  cycleIndex: number;
+  completedSetsCount: number;
+  thumbnailUrl: string | null;
+};
+
+export type WorkoutSessionDetailExercise = {
+  id: string;
+  programExerciseId: string;
+  title: string;
+  completedSetsCount: number;
+  totalSets: number;
+};
+
+export type WorkoutSessionDetail = {
+  id: string;
+  programId: string;
+  programName: string;
+  dayTitle: string;
+  completedAt: string;
+  totalSeconds: number | null;
+  cycleIndex: number;
+  exercises: WorkoutSessionDetailExercise[];
+};
+
+export type WorkoutHistoryProgram = {
+  programId: string;
+  programName: string;
+  sessions: WorkoutHistorySession[];
+};
+
+/**
+ * Fetch workout history via RPC (1 call instead of 4).
+ * Uses get_workout_history(user_id) which resolves client, sessions, set counts in one DB round-trip.
+ */
+export async function getWorkoutHistory(): Promise<WorkoutHistoryProgram[]> {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+  if (authError || !user) return [];
+
+  const { data: raw, error } = await supabase.rpc("get_workout_history", {
+    p_user_id: user.id,
+  });
+
+  if (error) {
+    console.warn("get_workout_history RPC failed, ensure migration is applied:", error.message);
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+
+  return (raw as Array<{
+    programId: string;
+    programName: string;
+    sessions: Array<{
+      id: string;
+      programId: string;
+      programName: string;
+      dayTitle: string;
+      dayIndex: number;
+      completedAt: string;
+      totalSeconds: number | null;
+      cycleIndex: number;
+      completedSetsCount: number;
+      thumbnailContent?: { video_url?: string; content_type?: string; mux_playback_id?: string | null } | null;
+    }>;
+  }>).map((p) => ({
+    programId: p.programId,
+    programName: p.programName,
+    sessions: p.sessions.map((s) => ({
+      id: s.id,
+      programId: s.programId,
+      programName: s.programName,
+      dayTitle: s.dayTitle,
+      dayIndex: s.dayIndex,
+      completedAt: s.completedAt,
+      totalSeconds: s.totalSeconds,
+      cycleIndex: s.cycleIndex,
+      completedSetsCount: s.completedSetsCount,
+      thumbnailUrl: s.thumbnailContent
+        ? getContentThumbnailUrl(s.thumbnailContent)
+        : null,
+    })),
+  }));
+}
+
+const sessionDetailCache = new Map<string, WorkoutSessionDetail>();
+
+/** Return cached session detail if available (no fetch) */
+export function getCachedSessionDetail(sessionId: string): WorkoutSessionDetail | null {
+  return sessionDetailCache.get(sessionId) ?? null;
+}
+
+/**
+ * Fetch workout session detail via RPC (1 call instead of 4+).
+ * Uses in-memory cache: returns cached data immediately if available.
+ * Pass skipCache: true (e.g. on pull-to-refresh) to force a fresh fetch.
+ */
+export async function getWorkoutSessionDetail(
+  sessionId: string,
+  options?: { skipCache?: boolean }
+): Promise<WorkoutSessionDetail | null> {
+  if (!sessionId) return null;
+
+  if (!options?.skipCache) {
+    const cached = sessionDetailCache.get(sessionId);
+    if (cached) return cached;
+  }
+
+  const { data: raw, error } = await supabase.rpc("get_workout_session_detail", {
+    p_session_id: sessionId,
+  });
+
+  if (error) {
+    console.warn("get_workout_session_detail RPC failed:", error.message);
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+
+  const d = raw as {
+    id: string;
+    programId: string;
+    programName: string;
+    dayTitle: string;
+    completedAt: string;
+    totalSeconds: number | null;
+    cycleIndex: number;
+    exercises: Array<{
+      id: string;
+      programExerciseId: string;
+      title: string;
+      completedSetsCount: number;
+      totalSets: number;
+    }>;
+  };
+
+  const result: WorkoutSessionDetail = {
+    id: d.id,
+    programId: d.programId,
+    programName: d.programName,
+    dayTitle: d.dayTitle,
+    completedAt: d.completedAt,
+    totalSeconds: d.totalSeconds,
+    cycleIndex: d.cycleIndex ?? 0,
+    exercises: d.exercises ?? [],
+  };
+
+  sessionDetailCache.set(sessionId, result);
+  return result;
 }
 
 export async function finishWorkout(workoutSessionId: string): Promise<boolean> {

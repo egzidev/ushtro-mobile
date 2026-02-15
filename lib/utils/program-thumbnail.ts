@@ -3,6 +3,7 @@ import { getYouTubeThumbnailUrl } from './video-url';
 
 export interface ProgramWithDays {
   program_days?: Array<{
+    day_index?: number;
     program_exercises?: Array<{
       content?: {
         video_url?: string;
@@ -45,4 +46,30 @@ export function getFirstVideoThumbnail(program: ProgramWithDays | null | undefin
   if (yt) return { imageUrl: yt, legacyVideoUrl: null };
   const legacy = firstContent.videoPreviewUrl || firstContent.video_url || null;
   return { imageUrl: null, legacyVideoUrl: legacy };
+}
+
+/** Thumbnail for the first exercise of a specific day (0-based day index) */
+export function getDayFirstExerciseThumbnail(
+  program: ProgramWithDays | null | undefined,
+  dayIndex: number
+): string | null {
+  const days = program?.program_days
+    ? [...program.program_days].sort(
+        (a, b) => (a.day_index ?? 0) - (b.day_index ?? 0)
+      )
+    : [];
+  const day = days[dayIndex];
+  const content = day?.program_exercises?.[0]?.content;
+  if (!content || (!content.mux_playback_id && !content.video_url))
+    return null;
+  if (content.content_type === "upload" && content.mux_playback_id) {
+    return getMuxThumbnailUrl(content.mux_playback_id);
+  }
+  if (content.video_url) {
+    return getYouTubeThumbnailUrl(content.video_url, "medium");
+  }
+  if (content.mux_playback_id) {
+    return getMuxThumbnailUrl(content.mux_playback_id);
+  }
+  return null;
 }

@@ -1,4 +1,10 @@
-import { Colors, Radius, Spacing, Typography } from "@/constants/theme";
+import {
+  Colors,
+  Radius,
+  Spacing,
+  TOUCH_TARGET_MIN,
+  Typography,
+} from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image } from "expo-image";
@@ -13,18 +19,24 @@ import {
   View,
 } from "react-native";
 
+type DayItem = {
+  is_rest_day?: boolean;
+  day_index?: number;
+  exerciseCount?: number;
+};
+
 type ProgramHeroCardProps = {
   programId: string;
   programName: string;
-  nextDay: number; // 1-based display "Dita X"
+  nextDay: number;
   totalDays: number;
   exerciseCount: number;
   estimatedMinutes?: number;
   completedDays: number;
   cycleIndex?: number;
   allComplete?: boolean;
-  nextDayIndex?: number; // 0-based for deep link
-  dayItems?: Array<{ is_rest_day?: boolean }>; // ordered days, for rest-day squares
+  nextDayIndex?: number;
+  dayItems?: DayItem[];
   imageUrl?: string | null;
 };
 
@@ -52,8 +64,6 @@ export function ProgramHeroCard({
   const ctaColor = isStarting ? "#22c55e" : colors.tint;
   const programHref =
     `/(client)/program/${programId}${nextDayIndex > 0 ? `?day=${nextDayIndex}` : ""}` as Href;
-
-  const duration = estimatedMinutes ?? Math.max(15, exerciseCount * 4);
 
   return (
     <View
@@ -96,24 +106,18 @@ export function ProgramHeroCard({
               pointerEvents="none"
             />
             <View style={styles.completeBadge} pointerEvents="none">
-              <View
-                style={RNStyleSheet.flatten([
-                  styles.trophyIconWrap,
-                  { backgroundColor: "rgba(234,179,8,0.3)" },
-                ])}
-              >
-                <MaterialIcons name="emoji-events" size={40} color="#eab308" />
+              <View style={styles.trophyRow}>
+                {Array.from({ length: Math.min(cycleIndex || 1, 5) }).map(
+                  (_, i) => (
+                    <MaterialIcons
+                      key={i}
+                      name="emoji-events"
+                      size={32}
+                      color="#eab308"
+                    />
+                  ),
+                )}
               </View>
-              {cycleIndex === 0 && (
-                <View
-                  style={RNStyleSheet.flatten([
-                    styles.cycleBadge,
-                    { backgroundColor: "rgba(234,179,8,0.2)" },
-                  ])}
-                >
-                  <Text style={styles.cycleBadgeText}>Java 1</Text>
-                </View>
-              )}
             </View>
           </>
         )}
@@ -127,138 +131,182 @@ export function ProgramHeroCard({
           {programName}
         </Text>
 
-        <View style={styles.metaRow}>
-          {cycleIndex > 0 && (
-            <Text
-              style={RNStyleSheet.flatten([
-                styles.metaLabel,
-                { color: colors.icon },
-              ])}
-            >
-              Cikli {cycleIndex}
-            </Text>
-          )}
-          <Text
-            style={RNStyleSheet.flatten([
-              styles.metaLabel,
-              { color: colors.icon },
-            ])}
-          >
-            {isCompleted ? `Ditë ${totalDays}` : `Dita tjetër: ${nextDay}`}
-          </Text>
-          <Text
-            style={RNStyleSheet.flatten([
-              styles.metaLabel,
-              { color: colors.icon },
-            ])}
-          >
-            {exerciseCount} ushtrime
-          </Text>
-          <Text
-            style={RNStyleSheet.flatten([
-              styles.metaLabel,
-              { color: colors.icon },
-            ])}
-          >
-            ~{duration} min
-          </Text>
-        </View>
+        {totalDays > 0 &&
+          (() => {
+            const items =
+              dayItems ??
+              Array.from({ length: totalDays }, (_, i) => ({
+                is_rest_day: false,
+                day_index: i,
+                exerciseCount: 1,
+              }));
+            let workoutCountBefore = 0;
+            return (
+              <>
+                <View style={styles.daysRow}>
+                  {items.map((day, i) => {
+                    const isRestDay = day.is_rest_day ?? false;
+                    const isCurrent = i === nextDayIndex;
+                    let isCompleted = false;
+                    if (!isRestDay) {
+                      isCompleted = workoutCountBefore < completedDays;
+                      workoutCountBefore++;
+                    }
+                    const dayNum = i + 1;
+                    const bg = isRestDay
+                      ? "#000"
+                      : isCurrent
+                        ? colors.tint
+                        : colorScheme === "dark"
+                          ? "rgba(107,114,128,0.35)"
+                          : "rgba(229,231,235,0.95)";
+                    return (
+                      <View key={i} style={styles.dayItem}>
+                        <View style={styles.dayCircleOuter}>
+                          <View
+                            style={RNStyleSheet.flatten([
+                              styles.dayCircle,
+                              { backgroundColor: bg },
+                            ])}
+                          >
+                            {isRestDay ? (
+                              <MaterialIcons
+                                name="bed"
+                                size={16}
+                                color="rgba(255,255,255,0.8)"
+                              />
+                            ) : (
+                              <Text
+                                style={RNStyleSheet.flatten([
+                                  styles.dayNum,
+                                  {
+                                    color:
+                                      isRestDay || isCurrent ? "#fff" : colors.text,
+                                  },
+                                ])}
+                              >
+                                D{dayNum}
+                              </Text>
+                            )}
+                          </View>
+                          {!isRestDay && (
+                            <View
+                              style={RNStyleSheet.flatten([
+                                styles.dayBadge,
+                                {
+                                  backgroundColor: isCompleted
+                                    ? "#22c55e"
+                                    : colorScheme === "dark"
+                                      ? "rgba(107,114,128,0.6)"
+                                      : "rgba(156,163,175,0.8)",
+                                },
+                              ])}
+                            >
+                              {isCompleted ? (
+                                <MaterialIcons
+                                  name="check"
+                                  size={10}
+                                  color="#fff"
+                                />
+                              ) : null}
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
 
-        {totalDays > 0 && (
-          <View style={styles.progressWrap}>
-            <View style={styles.daySquaresRow}>
-              {(
-                dayItems ??
-                Array.from({ length: totalDays }, () => ({
-                  is_rest_day: false,
-                }))
-              ).map((day, i) => {
-                if (day.is_rest_day) {
-                  return (
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <MaterialIcons
+                      name="bolt"
+                      size={18}
+                      color={colors.tint}
+                      style={styles.statIcon}
+                    />
+                    <View>
+                      <Text
+                        style={RNStyleSheet.flatten([
+                          styles.statValue,
+                          { color: colors.text },
+                        ])}
+                      >
+                        {cycleIndex}
+                      </Text>
+                      <Text
+                        style={RNStyleSheet.flatten([
+                          styles.statLabel,
+                          { color: colors.icon },
+                        ])}
+                      >
+                        Java aktuale
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.statItem}>
                     <View
-                      key={i}
                       style={RNStyleSheet.flatten([
-                        styles.daySquare,
-                        styles.restDaySquare,
-                        {
-                          backgroundColor:
-                            colorScheme === "dark"
-                              ? "rgba(107,114,128,0.3)"
-                              : "rgba(229,231,235,0.9)",
-                        },
+                        styles.statCircle,
+                        { borderColor: colors.tint },
                       ])}
                     >
-                      <MaterialIcons name="bed" size={8} color={colors.icon} />
+                      <MaterialIcons
+                        name="bolt"
+                        size={16}
+                        color={colors.tint}
+                      />
                     </View>
-                  );
-                }
-                const workoutIndex = (dayItems ?? [])
-                  .slice(0, i)
-                  .filter((d) => !d.is_rest_day).length;
-                const filled = workoutIndex < completedDays;
-                return (
-                  <View
-                    key={i}
-                    style={RNStyleSheet.flatten([
-                      styles.daySquare,
-                      filled
-                        ? { backgroundColor: colors.tint }
-                        : {
-                            backgroundColor:
-                              colorScheme === "dark"
-                                ? "rgba(107,114,128,0.4)"
-                                : "rgba(229,231,235,0.9)",
-                          },
-                    ])}
-                  />
-                );
-              })}
-            </View>
-            <Text
-              style={RNStyleSheet.flatten([
-                styles.progressText,
-                { color: colors.icon },
-              ])}
-            >
-              {completedDays} / {totalDays} ditë
-            </Text>
-          </View>
-        )}
+                    <View>
+                      <Text
+                        style={RNStyleSheet.flatten([
+                          styles.statValue,
+                          { color: colors.text },
+                        ])}
+                      >
+                        {completedDays} / {totalDays}
+                      </Text>
+                      <Text
+                        style={RNStyleSheet.flatten([
+                          styles.statLabel,
+                          { color: colors.icon },
+                        ])}
+                      >
+                        Ditë ushtrime
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </>
+            );
+          })()}
 
-        {isCompleted ? (
-          <View style={styles.completedSection}>
-            <Link href={`/(client)/program/${programId}` as Href} asChild>
-              <TouchableOpacity
-                style={RNStyleSheet.flatten([
-                  styles.primaryButton,
-                  { backgroundColor: "#eab308" },
-                ])}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.primaryButtonText,
-                    { color: "#1c1917" },
-                  ]}
-                >
-                  Rifillo programin
-                </Text>
-              </TouchableOpacity>
-            </Link>
-          </View>
-        ) : (
-          <Link href={programHref} asChild>
-            <TouchableOpacity
-              style={RNStyleSheet.flatten([
-                styles.primaryButton,
-                { backgroundColor: ctaColor },
-              ])}
-              activeOpacity={0.8}
+        <Link
+          href={
+            isCompleted
+              ? (`/(client)/program/${programId}?day=0&restart=1` as Href)
+              : programHref
+          }
+          asChild
+        >
+          <TouchableOpacity
+            style={RNStyleSheet.flatten([
+              styles.primaryButton,
+              {
+                backgroundColor: completedDays >= 1 ? colors.tint : ctaColor,
+              },
+            ])}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={styles.primaryButtonText}
+              allowFontScaling={true}
+              numberOfLines={1}
             >
-              <Text style={styles.primaryButtonText}>{ctaLabel}</Text>
-            </TouchableOpacity>
-          </Link>
-        )}
+              {completedDays >= 1 ? "Vazhdo" : ctaLabel}
+            </Text>
+          </TouchableOpacity>
+        </Link>
       </View>
     </View>
   );
@@ -270,7 +318,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   imageWrap: {
-    height: 200,
+    height: 260,
     position: "relative",
   },
   completeBadge: {
@@ -285,6 +333,12 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     justifyContent: "center",
     alignItems: "center",
+  },
+  trophyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
   cycleBadge: {
     paddingHorizontal: Spacing.md,
@@ -312,34 +366,67 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: Spacing.sm,
   },
-  metaRow: {
+  daysRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  metaLabel: {
-    fontSize: Typography.small,
-  },
-  progressWrap: {
     marginBottom: Spacing.lg,
+    alignSelf: "flex-start",
   },
-  daySquaresRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: Spacing.xs,
+  dayItem: {
+    alignItems: "center",
   },
-  daySquare: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
+  dayCircleOuter: {
+    position: "relative",
+  },
+  dayCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
   },
-  restDaySquare: {},
-  progressText: {
+  dayBadge: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  dayNum: {
     fontSize: Typography.caption,
+    fontWeight: "600",
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: Spacing.xl,
+    marginBottom: Spacing.lg,
+  },
+  statItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  statIcon: {},
+  statCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statValue: {
+    fontSize: Typography.body,
+    fontWeight: "700",
+  },
+  statLabel: {
+    fontSize: Typography.caption,
+    marginTop: 2,
   },
   ctaRow: {
     flexDirection: "row",
@@ -359,13 +446,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   primaryButton: {
-    flex: 1,
     paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     borderRadius: Radius.sm,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: TOUCH_TARGET_MIN,
   },
   primaryButtonText: {
-    color: "#fff",
+    color: "#ffffff",
     fontSize: Typography.body,
     fontWeight: "700",
   },
