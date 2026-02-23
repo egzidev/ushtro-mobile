@@ -12,15 +12,18 @@ import {
 } from "@/lib/api/workout-tracking";
 import { useWorkoutStore } from "@/lib/stores/workout-store";
 import { supabase } from "@/lib/supabase";
-import { getContentThumbnailUrl } from "@/lib/utils/video-url";
+import {
+  extractYouTubeVideoId,
+  getContentThumbnailUrl,
+} from "@/lib/utils/video-url";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { useVideoPlayer, VideoView } from "expo-video";
-import * as WebBrowser from "expo-web-browser";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   Modal,
   Pressable,
   ScrollView,
@@ -30,6 +33,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import YoutubePlayer from "react-native-youtube-iframe";
 
 type Day = {
   id: string;
@@ -88,16 +92,44 @@ function FullscreenMuxVideo({
       <VideoView
         player={player}
         style={fullscreenStyles.video}
-        allowsFullscreen
+        fullscreenOptions={{ enable: true }}
         allowsPictureInPicture
         nativeControls
         contentFit="contain"
       />
       <Pressable
-        style={[
-          fullscreenStyles.closeButton,
-          { top: insets.top + 8 },
-        ]}
+        style={[fullscreenStyles.closeButton, { top: insets.top + 8 }]}
+        onPress={onClose}
+        hitSlop={16}
+      >
+        <MaterialIcons name="close" size={28} color="#fff" />
+      </Pressable>
+    </View>
+  );
+}
+
+function FullscreenYouTubeVideo({
+  videoId,
+  onClose,
+}: {
+  videoId: string;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { width: screenW } = Dimensions.get("window");
+  const playerHeight = Math.round(screenW * (9 / 16));
+
+  return (
+    <View style={fullscreenStyles.container}>
+      <View style={fullscreenStyles.youtubeWrapper}>
+        <YoutubePlayer
+          videoId={videoId}
+          width={screenW}
+          height={playerHeight}
+        />
+      </View>
+      <Pressable
+        style={[fullscreenStyles.closeButton, { top: insets.top + 8 }]}
         onPress={onClose}
         hitSlop={16}
       >
@@ -117,6 +149,12 @@ const fullscreenStyles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  youtubeWrapper: {
+    flex: 1,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   closeButton: {
     position: "absolute",
     right: 20,
@@ -126,6 +164,7 @@ const fullscreenStyles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 20,
   },
 });
 
@@ -161,9 +200,8 @@ function OverviewExerciseCard({
     ? `${sets.length} sete${exercise.reps ? ` × ${exercise.reps}` : ""}`
     : exercise.sets != null
       ? `${exercise.sets} sete`
-      : exercise.reps ?? "-";
-  const hasVideo =
-    content && (content.video_url || content.mux_playback_id);
+      : (exercise.reps ?? "-");
+  const hasVideo = content && (content.video_url || content.mux_playback_id);
 
   return (
     <View style={[styles.exerciseCard, { backgroundColor: cardBg }]}>
@@ -287,7 +325,9 @@ function OverviewExerciseCard({
 
       {isExpanded && exercise.notes ? (
         <View style={[styles.notesRow, { borderTopColor: mutedColor + "20" }]}>
-          <Text style={[styles.notesLabel, { color: mutedColor }]}>Shënime</Text>
+          <Text style={[styles.notesLabel, { color: mutedColor }]}>
+            Shënime
+          </Text>
           <Text style={[styles.notesText, { color: textColor }]}>
             {exercise.notes}
           </Text>
@@ -315,104 +355,60 @@ export default function WorkoutDayOverviewScreen() {
   const [viewingCycle, setViewingCycle] = useState<number | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [videoModal, setVideoModal] = useState<
-    null | { type: "mux"; playbackId: string }
+    | null
+    | { type: "mux"; playbackId: string }
+    | { type: "youtube"; videoId: string }
   >(null);
 
   const setActiveWorkout = useWorkoutStore((s) => s.setActiveWorkout);
 
-  const onPlayVideo = useCallback(
-    (content: ContentForVideo) => {
-      if (content.content_type === "youtube" && content.video_url) {
-        WebBrowser.openBrowserAsync(content.video_url);
-        return;
+  const onPlayVideo = useCallback((content: ContentForVideo) => {
+    if (content.content_type === "youtube" && content.video_url) {
+      const videoId = extractYouTubeVideoId(content.video_url);
+      if (videoId) {
+        setVideoModal({ type: "youtube", videoId });
       }
-      if (content.mux_playback_id) {
-        setVideoModal({ type: "mux", playbackId: content.mux_playback_id });
-      }
-    },
-    []
-  );
+      return;
+    }
+    if (content.mux_playback_id) {
+      setVideoModal({ type: "mux", playbackId: content.mux_playback_id });
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Unauthorized");
+      const { data: overview, error } = await supabase.rpc(
+        "get_program_overview",
+        {
+          p_program_id: id,
+        },
+      );
 
-      const { data: client } = await supabase
-        .from("clients")
-        .select("id")
-        .eq("user_id", user.id)
-        .single();
-      if (!client) throw new Error("Client not found");
+      if (error || !overview) throw new Error("Program not found");
 
-      const { data: cp } = await supabase
-        .from("client_programs")
-        .select("program_id")
-        .eq("client_id", client.id)
-        .eq("program_id", id)
-        .single();
-      if (!cp) throw new Error("Program not assigned");
-
-      const { data: prog, error } = await supabase
-        .from("programs")
-        .select(
-          `
-          id,
-          name,
-          program_days (
-            id,
-            day_index,
-            title,
-            is_rest_day,
-            program_exercises (
-              id,
-              content_id,
-              sets,
-              reps,
-              rest,
-              tempo,
-              notes,
-              exercise_order,
-              program_exercise_sets (set_index, reps, rest),
-              content:content_id (id, title, video_url, content_type, mux_playback_id)
-            )
-          )
-        `
-        )
-        .eq("id", id)
-        .single();
-
-      if (error || !prog) throw new Error("Program not found");
-
-      const days = (prog.program_days as Day[] | null) ?? [];
+      const prog = overview.program as ProgramDetail;
+      const days = (prog.program_days ?? []).slice();
       days.sort((a, b) => a.day_index - b.day_index);
       days.forEach((d) => {
         if (d.program_exercises) {
           d.program_exercises.sort(
-            (a, b) => (a.exercise_order ?? 0) - (b.exercise_order ?? 0)
+            (a, b) => (a.exercise_order ?? 0) - (b.exercise_order ?? 0),
           );
           d.program_exercises.forEach((e) => {
             if (e.program_exercise_sets) {
-              e.program_exercise_sets.sort(
-                (a, b) => a.set_index - b.set_index
-              );
+              e.program_exercise_sets.sort((a, b) => a.set_index - b.set_index);
             }
           });
         }
       });
 
       setProgram({ ...prog, program_days: days });
-      setClientId(client.id);
-      const cycle = await getCurrentCycle(client.id, prog.id, days);
-      setViewingCycle(cycle);
+      setClientId(overview.client_id as string);
+      setViewingCycle(overview.cycle_index as number);
       const day = days[dayIdx];
       if (day?.program_exercises) {
-        setExpandedIds(
-          new Set(day.program_exercises.map((e) => e.id))
-        );
+        setExpandedIds(new Set(day.program_exercises.map((e) => e.id)));
       }
     } catch (e) {
       console.error(e);
@@ -438,7 +434,7 @@ export default function WorkoutDayOverviewScreen() {
         clientId,
         program.id,
         selDay.id,
-        cycle
+        cycle,
       );
       if (sessionId) {
         setActiveWorkout({
@@ -451,9 +447,7 @@ export default function WorkoutDayOverviewScreen() {
           pausedAt: null,
           completedSets: [],
         });
-        router.replace(
-          `/(client)/program/${id}/day/${dayIdx}` as any
-        );
+        router.replace(`/(client)/program/${id}/day/${dayIdx}` as any);
       }
     } finally {
       setStartLoading(false);
@@ -506,9 +500,7 @@ export default function WorkoutDayOverviewScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.pageTitle, { color: textColor }]}>
-          {dayTitle}
-        </Text>
+        <Text style={[styles.pageTitle, { color: textColor }]}>{dayTitle}</Text>
         <Text style={[styles.subtitle, { color: mutedColor }]}>
           {isRestDay
             ? "Ditë pushimi — nuk ka ushtrime"
@@ -581,15 +573,21 @@ export default function WorkoutDayOverviewScreen() {
       )}
 
       <Modal
-        visible={videoModal?.type === "mux"}
+        visible={!!videoModal}
         animationType="fade"
         statusBarTranslucent
+        presentationStyle="fullScreen"
         onRequestClose={() => setVideoModal(null)}
       >
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           {videoModal?.type === "mux" ? (
             <FullscreenMuxVideo
               playbackId={videoModal.playbackId}
+              onClose={() => setVideoModal(null)}
+            />
+          ) : videoModal?.type === "youtube" ? (
+            <FullscreenYouTubeVideo
+              videoId={videoModal.videoId}
               onClose={() => setVideoModal(null)}
             />
           ) : null}
@@ -615,7 +613,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: Typography.body,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.xs,
   },
   logHeader: {
     flexDirection: "row",
@@ -698,14 +696,22 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     borderTopWidth: 1,
   },
-  notesLabel: { fontSize: Typography.small, fontWeight: "600", marginBottom: Spacing.xs },
+  notesLabel: {
+    fontSize: Typography.small,
+    fontWeight: "600",
+    marginBottom: Spacing.xs,
+  },
   notesText: { fontSize: Typography.body },
   restBlock: {
     borderRadius: Radius.lg,
     padding: Spacing.xxl,
     alignItems: "center",
   },
-  restText: { fontSize: Typography.body, textAlign: "center", marginTop: Spacing.md },
+  restText: {
+    fontSize: Typography.body,
+    textAlign: "center",
+    marginTop: Spacing.md,
+  },
   bottomWrap: {
     position: "absolute",
     bottom: 0,
@@ -720,7 +726,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.sm,
     paddingVertical: Spacing.md,
-    borderRadius: Radius.sm,
+    borderRadius: Radius.full,
   },
   startButtonDisabled: { opacity: 0.6 },
   startButtonText: {

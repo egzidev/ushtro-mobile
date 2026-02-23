@@ -34,7 +34,7 @@ export function MuxVideoPlayer({
       <VideoView
         player={player}
         style={styles.video}
-        allowsFullscreen
+        fullscreenOptions={{ enable: true }}
         allowsPictureInPicture
         nativeControls
         contentFit={contentFit}
