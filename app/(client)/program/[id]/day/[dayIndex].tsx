@@ -509,7 +509,7 @@ export default function DayWorkoutScreen() {
 
       {!selectedDay.is_rest_day && (
         <View style={[styles.bottomBarWrap, { paddingBottom: insets.bottom }]}>
-          <View style={[styles.bottomBarInner, { backgroundColor: "#fff" }]}>
+          <View style={[styles.bottomBarInner, { backgroundColor: colors.card }]}>
             <View style={styles.workoutTimerRow}>
               <MaterialIcons name="timer" size={20} color={colors.icon} />
               <Text style={[styles.workoutTimer, { color: colors.text }]}>
@@ -538,6 +538,7 @@ export default function DayWorkoutScreen() {
                   style={[styles.finishButton, workoutLoading && { opacity: 0.6 }]}
                   activeOpacity={0.85}
                 >
+                  <MaterialIcons name="flag" size={24} color="#fff" />
                   <Text style={styles.finishButtonText}>Përfundo</Text>
                 </TouchableOpacity>
               </View>
@@ -548,6 +549,7 @@ export default function DayWorkoutScreen() {
                 style={[styles.filloButton, { backgroundColor: colors.tint }, workoutLoading && { opacity: 0.6 }]}
                 activeOpacity={0.85}
               >
+                <MaterialIcons name="play-arrow" size={24} color="#fff" />
                 <Text style={styles.filloButtonText}>Fillo</Text>
               </TouchableOpacity>
             )}
@@ -587,13 +589,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: "#64748b",
   },
-  pauseButtonText: { color: "#fff", fontWeight: "600", fontSize: 14 },
+  pauseButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   finishButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.sm,
@@ -601,10 +606,12 @@ const styles = StyleSheet.create({
   },
   finishButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   filloButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
     paddingHorizontal: Spacing.xl,
     paddingVertical: Spacing.sm,
     borderRadius: Radius.sm,
-    alignItems: "center",
   },
   filloButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
   restDayRow: {

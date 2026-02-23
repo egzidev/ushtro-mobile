@@ -308,7 +308,7 @@ export default function WorkoutSessionDetailScreen() {
       </Text>
 
       {/* Stats row */}
-      <View style={[styles.statsRow, { backgroundColor: "#fff" }]}>
+      <View style={[styles.statsRow, { backgroundColor: cardBg }]}>
         <StatItem
           label="Kohëzgjatja"
           value={totalTime}

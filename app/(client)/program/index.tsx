@@ -140,7 +140,7 @@ export default function ProgramListScreen() {
                 isCompleted={!!isCompleted}
                 completedDurationSeconds={progress?.completedDayDurations?.[d.id]}
                 onPress={() =>
-                  router.push(`/(client)/program/${programId}/day/${i}` as any)
+                  router.push(`/(client)/program/${programId}/overview/${i}` as any)
                 }
               />
             </View>

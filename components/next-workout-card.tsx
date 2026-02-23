@@ -51,7 +51,7 @@ export function NextWorkoutCard({
           ? undefined
           : () =>
               router.push(
-                `/(client)/program/${programId}/day/${dayIndex}` as any,
+                `/(client)/program/${programId}/overview/${dayIndex}` as any,
               )
       }
       disabled={isRestDay}

@@ -18,6 +18,10 @@ export default function ProgramIdLayout() {
       }}
     >
       <Stack.Screen name="index" options={{ title: "Detajet" }} />
+      <Stack.Screen
+        name="overview/[dayIndex]"
+        options={{ title: "Dita e stërvitjes" }}
+      />
       <Stack.Screen name="day/[dayIndex]" options={{ headerShown: false }} />
     </Stack>
   );

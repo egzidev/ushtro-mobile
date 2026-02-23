@@ -230,7 +230,7 @@ export default function ProgramDayListScreen() {
                   completedDurationSeconds={progressData?.completedDayDurations?.[d.id]}
                   onPress={() =>
                     router.push(
-                      `/(client)/program/${id}/day/${i}` as any,
+                      `/(client)/program/${id}/overview/${i}` as any,
                     )
                   }
                 />
