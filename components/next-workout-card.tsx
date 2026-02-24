@@ -185,12 +185,8 @@ export function NextWorkoutCard({
                 <View
                   style={[styles.filloButton, { backgroundColor: colors.tint }]}
                 >
-                  <MaterialIcons
-                    name="play-arrow"
-                    size={22}
-                    color="#fff"
-                  />
-                  <Text style={styles.filloButtonText}>Fillo ushtrimin</Text>
+                  <MaterialIcons name="play-arrow" size={22} color="#fff" />
+                  <Text style={styles.filloButtonText}>Fillo ushtrimet</Text>
                 </View>
               </View>
             </>

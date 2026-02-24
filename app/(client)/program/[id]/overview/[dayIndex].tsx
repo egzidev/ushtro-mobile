@@ -571,7 +571,7 @@ export default function WorkoutDayOverviewScreen() {
             ) : (
               <>
                 <MaterialIcons name="play-arrow" size={24} color="#fff" />
-                <Text style={styles.startButtonText}>Fillo stërvitjen</Text>
+                <Text style={styles.startButtonText}>Fillo ushtrimet</Text>
               </>
             )}
           </TouchableOpacity>
@@ -731,7 +731,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.sm,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.lg,
     borderRadius: Radius.full,
   },
   startButtonDisabled: { opacity: 0.6 },

@@ -1,10 +1,12 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { MuxVideoPlayer } from "@/components/video/mux-video-player";
-import { Colors, Spacing } from "@/constants/theme";
+import { Colors, Radius, Spacing } from "@/constants/theme";
 import type { Day } from "@/hooks/use-day-workout";
 import { getContentThumbnailUrl } from "@/lib/utils/video-url";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { Image } from "expo-image";
+import { useState } from "react";
+import { Platform, Pressable } from "react-native";
 import {
   ScrollView,
   StyleSheet,
@@ -13,6 +15,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const THUMBNAIL_SIZE = 64;
+const COMPLETED_CIRCLE_SIZE = 8;
+const COMPLETED_CIRCLE_GAP = 6;
 
 export type DayWorkoutBodyProps = {
   selectedDay: Day;
@@ -36,6 +42,9 @@ export function DayWorkoutBody({
   openVideo,
 }: DayWorkoutBodyProps) {
   const insets = useSafeAreaInsets();
+  const [expandedCompletedId, setExpandedCompletedId] = useState<string | null>(
+    null
+  );
 
   return (
     <>
@@ -63,6 +72,281 @@ export function DayWorkoutBody({
                 content?.content_type === "youtube" && content?.video_url;
               const isMux =
                 content?.mux_playback_id && content?.content_type !== "youtube";
+
+              const sets = ex.program_exercise_sets ?? [];
+              const isCompleted =
+                sets.length > 0 &&
+                sets.every((s) =>
+                  effectiveCompletedSets.has(`${ex.id}-${s.set_index}`)
+                );
+              const isExpanded = expandedCompletedId === ex.id;
+
+              if (isCompleted && !isExpanded) {
+                return (
+                  <Pressable
+                    key={ex.id}
+                    onPress={() => setExpandedCompletedId(ex.id)}
+                    style={[
+                      styles.completedCard,
+                      { backgroundColor: colors.card },
+                      Platform.OS === "ios"
+                        ? {
+                            shadowColor: "#000",
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.08,
+                            shadowRadius: 8,
+                          }
+                        : { elevation: 3 },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.completedThumbWrap,
+                        {
+                          backgroundColor: `${colors.icon}15`,
+                          borderRadius: Radius.sm,
+                        },
+                      ]}
+                    >
+                      {thumbnailUrl ? (
+                        <Image
+                          source={{ uri: thumbnailUrl }}
+                          style={styles.completedThumbnail}
+                          contentFit="cover"
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.completedThumbnail,
+                            {
+                              backgroundColor: `${colors.tint}20`,
+                            },
+                          ]}
+                        />
+                      )}
+                    </View>
+                    <View style={styles.completedRight}>
+                      <Text
+                        style={[styles.completedTitle, { color: colors.text }]}
+                        numberOfLines={2}
+                      >
+                        {content?.title ?? "Ushtrim"}
+                      </Text>
+                      <View style={styles.completedCirclesRow}>
+                        {sets.map((_, i) => (
+                          <View
+                            key={i}
+                            style={[
+                              styles.completedCircle,
+                              { backgroundColor: "#22c55e" },
+                            ]}
+                          />
+                        ))}
+                      </View>
+                    </View>
+                    <MaterialIcons
+                      name="keyboard-arrow-down"
+                      size={24}
+                      color={colors.icon}
+                      style={styles.completedChevron}
+                    />
+                  </Pressable>
+                );
+              }
+
+              if (isCompleted && isExpanded) {
+                return (
+                  <View
+                    key={ex.id}
+                    style={[
+                      styles.completedCardExpandedWrap,
+                      { backgroundColor: colors.card },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.completedCard,
+                        { backgroundColor: colors.card },
+                        styles.completedCardHeaderOnly,
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.completedThumbWrap,
+                          {
+                            backgroundColor: `${colors.icon}15`,
+                            borderRadius: Radius.sm,
+                          },
+                        ]}
+                      >
+                        {thumbnailUrl ? (
+                          <Image
+                            source={{ uri: thumbnailUrl }}
+                            style={styles.completedThumbnail}
+                            contentFit="cover"
+                          />
+                        ) : (
+                          <View
+                            style={[
+                              styles.completedThumbnail,
+                              {
+                                backgroundColor: `${colors.tint}20`,
+                              },
+                            ]}
+                          />
+                        )}
+                      </View>
+                      <View style={styles.completedRight}>
+                        <Text
+                          style={[
+                            styles.completedTitle,
+                            { color: colors.text },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {content?.title ?? "Ushtrim"}
+                        </Text>
+                        <View style={styles.completedCirclesRow}>
+                          {sets.map((_, i) => (
+                            <View
+                              key={i}
+                              style={[
+                                styles.completedCircle,
+                                { backgroundColor: "#22c55e" },
+                              ]}
+                            />
+                          ))}
+                        </View>
+                      </View>
+                      <Pressable
+                        onPress={() => setExpandedCompletedId(null)}
+                        style={styles.completedChevron}
+                        hitSlop={10}
+                      >
+                        <MaterialIcons
+                          name="keyboard-arrow-up"
+                          size={24}
+                          color={colors.icon}
+                        />
+                      </Pressable>
+                    </View>
+                    <View style={styles.completedExpandedTableWrap}>
+                    {ex.program_exercise_sets?.length ? (
+                      <View
+                        style={[
+                          styles.setsTable,
+                          {
+                            backgroundColor: colors.card,
+                            borderWidth: 1,
+                            borderColor: `${colors.icon}20`,
+                          },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.setsTableHeader,
+                            {
+                              backgroundColor: `${colors.icon}15`,
+                              borderBottomWidth: 1,
+                              borderBottomColor: `${colors.icon}20`,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.setsTableHeaderText,
+                              styles.setsTableFirstCol,
+                              { color: colors.icon },
+                            ]}
+                          >
+                            Seti
+                          </Text>
+                          <Text
+                            style={[
+                              styles.setsTableHeaderText,
+                              { color: colors.icon },
+                            ]}
+                          >
+                            Përsëritje
+                          </Text>
+                          <Text
+                            style={[
+                              styles.setsTableHeaderText,
+                              { color: colors.icon },
+                            ]}
+                          >
+                            Pushim
+                          </Text>
+                          <View style={styles.setsTableHeaderCheck} />
+                        </View>
+                        {ex.program_exercise_sets.map((s, i) => {
+                          const setKey = `${ex.id}-${s.set_index}`;
+                          const rowBg = "rgba(34, 197, 94, 0.18)";
+                          return (
+                            <View
+                              key={i}
+                              style={[
+                                styles.setsTableRow,
+                                i > 0
+                                  ? {
+                                      borderTopWidth: 1,
+                                      borderTopColor: `${colors.icon}15`,
+                                    }
+                                  : null,
+                                { backgroundColor: rowBg },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.setsTableCell,
+                                  styles.setsTableCellFirst,
+                                  { color: colors.text },
+                                ]}
+                              >
+                                {s.set_index}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.setsTableCell,
+                                  { color: colors.text },
+                                ]}
+                              >
+                                {s.reps ?? "-"}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.setsTableCell,
+                                  { color: colors.text },
+                                ]}
+                              >
+                                {s.rest ?? "-"}
+                              </Text>
+                              <View style={styles.setsTableCellCheck}>
+                                <Checkbox
+                                  shape="circle"
+                                  checked={true}
+                                  checkedColor="#22c55e"
+                                  disabled={!workoutStarted}
+                                  onPress={() => toggleSetComplete(setKey)}
+                                />
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <View style={styles.setsRow}>
+                        <Text style={[styles.meta, { color: colors.icon }]}>
+                          Sete: {ex.sets ?? "-"} · Përsëritje: {ex.reps ?? "-"} ·
+                          Pushim: {ex.rest ?? "-"}
+                          {ex.tempo ? ` · Tempo: ${ex.tempo}` : ""}
+                        </Text>
+                      </View>
+                    )}
+                    </View>
+                  </View>
+                );
+              }
 
               return (
                 <View
@@ -341,6 +625,62 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   restDay: { fontSize: 16, textAlign: "center" },
+  completedCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: Radius.lg,
+    marginBottom: Spacing.lg,
+    overflow: "hidden",
+  },
+  completedCardHeaderOnly: {
+    marginBottom: 0,
+  },
+  completedCardExpandedWrap: {
+    borderRadius: Radius.lg,
+    marginBottom: Spacing.lg,
+    overflow: "hidden",
+  },
+  completedExpandedTableWrap: {
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+  },
+  completedThumbWrap: {
+    position: "relative",
+    width: THUMBNAIL_SIZE,
+    height: THUMBNAIL_SIZE,
+    borderRadius: Radius.sm,
+    overflow: "hidden",
+    marginRight: Spacing.md,
+  },
+  completedThumbnail: {
+    width: THUMBNAIL_SIZE,
+    height: THUMBNAIL_SIZE,
+  },
+  completedRight: {
+    flex: 1,
+    minWidth: 0,
+  },
+  completedTitle: {
+    fontWeight: "700",
+    fontSize: 16,
+    marginBottom: Spacing.sm,
+  },
+  completedCirclesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: COMPLETED_CIRCLE_GAP,
+  },
+  completedCircle: {
+    width: COMPLETED_CIRCLE_SIZE,
+    height: COMPLETED_CIRCLE_SIZE,
+    borderRadius: COMPLETED_CIRCLE_SIZE / 2,
+  },
+  completedChevron: {
+    marginLeft: Spacing.sm,
+  },
   exerciseCard: {
     borderRadius: 22,
     padding: 14,
