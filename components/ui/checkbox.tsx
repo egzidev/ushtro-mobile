@@ -9,6 +9,8 @@ type CheckboxProps = {
   onPress?: () => void;
   disabled?: boolean;
   shape?: "square" | "circle";
+  /** When checked, use this color for border/background instead of theme tint */
+  checkedColor?: string;
 };
 
 export function Checkbox({
@@ -16,12 +18,14 @@ export function Checkbox({
   onPress,
   disabled = false,
   shape = "square",
+  checkedColor,
 }: CheckboxProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const tint = colors.tint;
-  const uncheckedBg = colorScheme === "dark" ? "#374151" : "white";
-  const uncheckedBorder = colorScheme === "dark" ? "#6b7280" : "#e5e7eb";
+  const checkedFill = checkedColor ?? tint;
+  const uncheckedBg = colorScheme === "dark" ? "#374151" : "#d1d5db";
+  const uncheckedBorder = colorScheme === "dark" ? "#6b7280" : "#9ca3af";
 
   return (
     <TouchableOpacity
@@ -40,17 +44,13 @@ export function Checkbox({
           styles.box,
           shape === "circle" && styles.boxCircle,
           {
-            borderColor: checked ? tint : uncheckedBorder,
-            backgroundColor: checked ? tint : uncheckedBg,
+            borderWidth: shape === "circle" ? 0 : 1,
+            borderColor: checked ? checkedFill : uncheckedBorder,
+            backgroundColor: checked ? checkedFill : uncheckedBg,
           },
         ]}
       >
-        {checked ? (
-          <MaterialIcons name="check" size={18} color="#fff" />
-        ) : (
-          // color a bit gray dark
-          <MaterialIcons name="check" size={18} color="#6b7280" />
-        )}
+        <MaterialIcons name="check" size={18} color="#fff" />
       </View>
     </TouchableOpacity>
   );

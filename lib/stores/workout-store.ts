@@ -7,12 +7,19 @@ import {
   getProgramProgress,
   type ProgramProgress,
 } from "@/lib/api/workout-tracking";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
+
+const ACTIVE_WORKOUT_KEY = "@ushtro/activeWorkout";
 
 export type ActiveWorkout = {
   sessionId: string;
   programId: string;
   programDayId: string;
+  /** 0-based day index for navigation (e.g. program/id/day/0) */
+  dayIndex: number;
+  /** Display title for the floating card (e.g. "Dita 1" or custom day title) */
+  dayTitle: string;
   clientId: string;
   startTime: number;
   /** Total milliseconds the timer was paused */
@@ -39,6 +46,11 @@ type WorkoutState = {
   resumeActiveWorkout: () => void;
   clearActiveWorkout: () => void;
   getActiveWorkoutForDay: (programId: string, programDayId: string) => ActiveWorkout | null;
+  /** Load persisted active workout (call on app start so timer continues after close) */
+  rehydrateActiveWorkout: () => Promise<void>;
+  /** When true, the workout day drawer is open (bottom sheet instead of full page) */
+  workoutDrawerOpen: boolean;
+  setWorkoutDrawerOpen: (open: boolean) => void;
   reset: () => void;
 };
 
@@ -49,8 +61,14 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
   refreshing: false,
   loadedOnce: false,
   activeWorkout: null,
+  workoutDrawerOpen: false,
 
-  setActiveWorkout: (data) => set({ activeWorkout: data }),
+  setWorkoutDrawerOpen: (open) => set({ workoutDrawerOpen: open }),
+
+  setActiveWorkout: (data) => {
+    set({ activeWorkout: data });
+    AsyncStorage.setItem(ACTIVE_WORKOUT_KEY, data ? JSON.stringify(data) : "").catch(() => {});
+  },
 
   toggleCompletedSet: (key) => {
     const { activeWorkout } = get();
@@ -58,29 +76,61 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
     const next = activeWorkout.completedSets.includes(key)
       ? activeWorkout.completedSets.filter((k) => k !== key)
       : [...activeWorkout.completedSets, key];
-    set({ activeWorkout: { ...activeWorkout, completedSets: next } });
+    const nextWorkout = { ...activeWorkout, completedSets: next };
+    set({ activeWorkout: nextWorkout });
+    AsyncStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(nextWorkout)).catch(() => {});
   },
 
   pauseActiveWorkout: () => {
     const { activeWorkout } = get();
     if (!activeWorkout || activeWorkout.pausedAt !== null) return;
-    set({ activeWorkout: { ...activeWorkout, pausedAt: Date.now() } });
+    const next = { ...activeWorkout, pausedAt: Date.now() };
+    set({ activeWorkout: next });
+    AsyncStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(next)).catch(() => {});
   },
 
   resumeActiveWorkout: () => {
     const { activeWorkout } = get();
     if (!activeWorkout || activeWorkout.pausedAt === null) return;
     const pausedDuration = Date.now() - activeWorkout.pausedAt;
-    set({
-      activeWorkout: {
-        ...activeWorkout,
-        pausedAt: null,
-        totalPausedMs: activeWorkout.totalPausedMs + pausedDuration,
-      },
-    });
+    const next = {
+      ...activeWorkout,
+      pausedAt: null,
+      totalPausedMs: activeWorkout.totalPausedMs + pausedDuration,
+    };
+    set({ activeWorkout: next });
+    AsyncStorage.setItem(ACTIVE_WORKOUT_KEY, JSON.stringify(next)).catch(() => {});
   },
 
-  clearActiveWorkout: () => set({ activeWorkout: null }),
+  clearActiveWorkout: () => {
+    set({ activeWorkout: null });
+    AsyncStorage.setItem(ACTIVE_WORKOUT_KEY, "").catch(() => {});
+  },
+
+  rehydrateActiveWorkout: async () => {
+    try {
+      const raw = await AsyncStorage.getItem(ACTIVE_WORKOUT_KEY);
+      if (!raw?.trim()) return;
+      const data = JSON.parse(raw) as Partial<ActiveWorkout> & { sessionId?: string; startTime?: number };
+      if (!data?.sessionId || !data?.startTime) return;
+      set({
+        activeWorkout: {
+          sessionId: data.sessionId,
+          programId: data.programId ?? "",
+          programDayId: data.programDayId ?? "",
+          dayIndex: data.dayIndex ?? 0,
+          dayTitle: data.dayTitle ?? `Dita ${(data.dayIndex ?? 0) + 1}`,
+          clientId: data.clientId ?? "",
+          startTime: data.startTime,
+          totalPausedMs: data.totalPausedMs ?? 0,
+          pausedAt: data.pausedAt ?? null,
+          completedSets: Array.isArray(data.completedSets) ? data.completedSets : [],
+        },
+      });
+    } catch {
+      // ignore
+    }
+  },
 
   getActiveWorkoutForDay: (programId, programDayId) => {
     const { activeWorkout } = get();
@@ -158,6 +208,7 @@ export const useWorkoutStore = create<WorkoutState>((set, get) => ({
       refreshing: false,
       loadedOnce: false,
       activeWorkout: null,
+      workoutDrawerOpen: false,
     });
   },
 }));

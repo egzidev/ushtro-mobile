@@ -361,6 +361,7 @@ export default function WorkoutDayOverviewScreen() {
   >(null);
 
   const setActiveWorkout = useWorkoutStore((s) => s.setActiveWorkout);
+  const setWorkoutDrawerOpen = useWorkoutStore((s) => s.setWorkoutDrawerOpen);
 
   const onPlayVideo = useCallback((content: ContentForVideo) => {
     if (content.content_type === "youtube" && content.video_url) {
@@ -437,17 +438,22 @@ export default function WorkoutDayOverviewScreen() {
         cycle,
       );
       if (sessionId) {
+        const dayTitle =
+          selDay.title ||
+          (selDay.is_rest_day ? "Dita e pushimit" : `Dita ${dayIdx + 1}`);
         setActiveWorkout({
           sessionId,
           programId: program.id,
           programDayId: selDay.id,
+          dayIndex: dayIdx,
+          dayTitle,
           clientId,
           startTime: Date.now(),
           totalPausedMs: 0,
           pausedAt: null,
           completedSets: [],
         });
-        router.replace(`/(client)/program/${id}/day/${dayIdx}` as any);
+        setWorkoutDrawerOpen(true);
       }
     } finally {
       setStartLoading(false);

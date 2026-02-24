@@ -22,6 +22,13 @@ export interface ClientProgramWithDetails {
       program_exercises?: Array<{
         id: string;
         content_id: string;
+        sets: number | null;
+        reps: string | null;
+        program_exercise_sets?: Array<{
+          set_index: number;
+          reps: string | null;
+          rest: string | null;
+        }>;
         content?: {
           id: string;
           title: string;
@@ -72,6 +79,9 @@ export async function fetchMyPrograms(): Promise<ClientProgramWithDetails[]> {
           program_exercises (
             id,
             content_id,
+            sets,
+            reps,
+            program_exercise_sets (set_index, reps, rest),
             content:content_id (
               id,
               title,

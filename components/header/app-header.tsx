@@ -23,6 +23,8 @@ type AppHeaderProps = {
   onBack?: () => void;
   /** Larger title for main pages (list/detail); false for drill-down like workout day */
   largeTitle?: boolean;
+  /** Optional element rendered on the right side of the header */
+  rightAction?: React.ReactNode;
 };
 
 export function AppHeader({
@@ -31,6 +33,7 @@ export function AppHeader({
   showBack,
   onBack,
   largeTitle,
+  rightAction,
 }: AppHeaderProps) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -86,6 +89,7 @@ export function AppHeader({
         >
           {displayText}
         </Text>
+        {rightAction}
       </View>
     </View>
   );

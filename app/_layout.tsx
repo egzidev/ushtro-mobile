@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
@@ -11,6 +12,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
     <AppThemeProvider>
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -23,5 +25,6 @@ export default function RootLayout() {
     </ThemeProvider>
     </AppThemeProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

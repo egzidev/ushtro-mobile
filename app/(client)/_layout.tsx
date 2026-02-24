@@ -1,13 +1,17 @@
-import { Tabs, useRouter } from 'expo-router';
-import React from 'react';
+import { Tabs, useRouter, useSegments } from 'expo-router';
+import React, { useEffect } from 'react';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import type { Route } from '@react-navigation/native';
+import { View } from 'react-native';
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AppHeader } from '@/components/header/app-header';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/hooks/use-auth';
+import { useWorkoutStore } from '@/lib/stores/workout-store';
+import { WorkoutFloatingCard } from '@/components/workout-floating-card';
+import { WorkoutDayDrawer } from '@/components/workout-day-drawer';
 
 function getTabBarVisibility(route: Partial<Route<string>>) {
   const name = getFocusedRouteNameFromRoute(route);
@@ -18,10 +22,20 @@ export default function ClientTabLayout() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const { user } = useAuth();
+  const rehydrateActiveWorkout = useWorkoutStore((s) => s.rehydrateActiveWorkout);
+
+  useEffect(() => {
+    rehydrateActiveWorkout();
+  }, [rehydrateActiveWorkout]);
   const userName = user?.user_metadata?.full_name ?? user?.email?.split('@')[0] ?? '';
   const router = useRouter();
+  const segments = useSegments() as string[];
+  const isOnDayScreen = segments.includes('day');
+  const workoutDrawerOpen = useWorkoutStore((s) => s.workoutDrawerOpen);
+  const hideFloatingCard = isOnDayScreen || workoutDrawerOpen;
 
   return (
+    <View style={{ flex: 1 }}>
     <Tabs
       screenOptions={({ route }) => ({
         tabBarActiveTintColor: colors.tabIconSelected,
@@ -85,5 +99,8 @@ export default function ClientTabLayout() {
         }}
       />
     </Tabs>
+    <WorkoutFloatingCard hide={hideFloatingCard} />
+    <WorkoutDayDrawer />
+    </View>
   );
 }
