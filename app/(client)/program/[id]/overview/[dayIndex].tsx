@@ -17,8 +17,11 @@ import {
   getContentThumbnailUrl,
 } from "@/lib/utils/video-url";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useIsFocused } from "@react-navigation/native";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -346,6 +349,7 @@ export default function WorkoutDayOverviewScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const dayIdx = parseInt(dayIndex ?? "0", 10) || 0;
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
@@ -496,27 +500,106 @@ export default function WorkoutDayOverviewScreen() {
   const mutedColor = colorScheme === "dark" ? "#9ca3af" : "#6b7280";
   const cardBg = colorScheme === "dark" ? "#1e1e24" : "#fff";
 
+  const firstExercise = exercises[0];
+  const heroImageUrl =
+    firstExercise?.content && getContentThumbnailUrl(firstExercise.content)
+      ? getContentThumbnailUrl(firstExercise.content)!
+      : null;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={isFocused ? "light" : "auto"} />
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingBottom: 100 + insets.bottom },
-        ]}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.pageTitle, { color: textColor }]}>{dayTitle}</Text>
-        <Text style={[styles.subtitle, { color: mutedColor }]}>
-          {isRestDay
-            ? "Ditë pushimi — nuk ka ushtrime"
-            : `${exerciseCount} ushtrim${exerciseCount !== 1 ? "e" : ""}`}
-        </Text>
+        <View style={[styles.heroImageBlock, { height: 400 }]}>
+          {heroImageUrl ? (
+            <Image
+              source={{ uri: heroImageUrl }}
+              style={styles.heroImage}
+              contentFit="cover"
+            />
+          ) : (
+            <View
+              style={[styles.heroImagePlaceholder, { backgroundColor: cardBg }]}
+            >
+              <MaterialIcons
+                name={isRestDay ? "bed" : "fitness-center"}
+                size={56}
+                color={mutedColor}
+              />
+            </View>
+          )}
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.5)", "rgba(0,0,0,0.85)"]}
+            locations={[0, 0.4, 1]}
+            style={styles.heroGradient}
+          />
+          <View style={[styles.heroBottomContent]}>
+            <View style={styles.heroTopRow}>
+              <View
+                style={[
+                  styles.dayPill,
+                  {
+                    backgroundColor: isRestDay
+                      ? "rgba(255,255,255,0.25)"
+                      : "rgba(255,255,255,0.3)",
+                  },
+                ]}
+              >
+                <Text style={styles.dayPillTextHero}>
+                  {isRestDay ? "Pushim" : `Dita ${dayIdx + 1}`}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.pageTitleHero}>{dayTitle}</Text>
+            <Text style={styles.subtitleHero}>
+              {isRestDay
+                ? "Nuk ka ushtrime — fokusohu te pushimi dhe rikuperimi."
+                : exerciseCount === 0
+                  ? "Nuk ka ushtrime të planifikuara."
+                  : exerciseCount === 1
+                    ? "1 ushtrim për sot"
+                    : `${exerciseCount} ushtrime për sot`}
+            </Text>
+            {!isRestDay && (
+              <TouchableOpacity
+                onPress={onStartWorkout}
+                disabled={startLoading}
+                style={[
+                  styles.startButtonHero,
+                  { backgroundColor: colors.tint },
+                  startLoading && styles.startButtonDisabled,
+                ]}
+                activeOpacity={0.85}
+              >
+                {startLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <MaterialIcons name="play-arrow" size={24} color="#fff" />
+                    <Text style={styles.startButtonText}>Fillo ushtrimet</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
 
-        {!isRestDay && (
+        <View
+          style={[
+            styles.contentWrap,
+            {
+              paddingBottom: 100 + insets.bottom,
+              paddingHorizontal: PAGE_CONTENT_PADDING,
+            },
+          ]}
+        >
           <>
             <View style={styles.logHeader}>
-              <Text style={[styles.logTitle, { color: textColor }]}>
+              <Text style={[styles.logTitle, { color: mutedColor }]}>
                 Ushtrimet
               </Text>
             </View>
@@ -534,49 +617,17 @@ export default function WorkoutDayOverviewScreen() {
               />
             ))}
           </>
-        )}
 
-        {isRestDay && (
-          <View style={[styles.restBlock, { backgroundColor: cardBg }]}>
-            <MaterialIcons name="bed" size={48} color={mutedColor} />
-            <Text style={[styles.restText, { color: mutedColor }]}>
-              Kjo është dita e pushimit. Pushoni dhe rikuperohuni.
-            </Text>
-          </View>
-        )}
-      </ScrollView>
-
-      {!isRestDay && (
-        <View
-          style={[
-            styles.bottomWrap,
-            {
-              paddingBottom: insets.bottom + Spacing.md,
-              backgroundColor: colors.background,
-            },
-          ]}
-        >
-          <TouchableOpacity
-            onPress={onStartWorkout}
-            disabled={startLoading}
-            style={[
-              styles.startButton,
-              { backgroundColor: colors.tint },
-              startLoading && styles.startButtonDisabled,
-            ]}
-            activeOpacity={0.85}
-          >
-            {startLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <MaterialIcons name="play-arrow" size={24} color="#fff" />
-                <Text style={styles.startButtonText}>Fillo ushtrimet</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {isRestDay && (
+            <View style={[styles.restBlock, { backgroundColor: cardBg }]}>
+              <MaterialIcons name="bed" size={48} color={mutedColor} />
+              <Text style={[styles.restText, { color: mutedColor }]}>
+                Kjo është dita e pushimit. Pushoni dhe rikuperohuni.
+              </Text>
+            </View>
+          )}
         </View>
-      )}
+      </ScrollView>
 
       <Modal
         visible={!!videoModal}
@@ -606,11 +657,92 @@ export default function WorkoutDayOverviewScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { flex: 1 },
+  scrollContent: {
+    paddingTop: 0,
+  },
+  contentWrap: {
+    paddingTop: Spacing.lg,
+  },
+  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  heroImageBlock: {
+    width: "100%",
+    position: "relative",
+    overflow: "hidden",
+  },
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  heroImagePlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heroGradient: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  heroBottomContent: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.xxl,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: Spacing.sm,
+  },
+  dayPill: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: Radius.full,
+  },
+  dayPillTextHero: {
+    fontSize: Typography.small,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+    color: "#fff",
+  },
+  pageTitleHero: {
+    fontSize: Typography.headline,
+    fontWeight: "700",
+    marginBottom: Spacing.xs,
+    lineHeight: 28,
+    color: "#fff",
+  },
+  subtitleHero: {
+    fontSize: Typography.body,
+    lineHeight: 22,
+    color: "rgba(255,255,255,0.9)",
+  },
   content: {
     paddingHorizontal: PAGE_CONTENT_PADDING,
     paddingTop: Spacing.lg,
   },
-  centered: { flex: 1, justifyContent: "center", alignItems: "center" },
+  heroBlock: {
+    paddingVertical: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingLeft: Spacing.lg,
+    borderLeftWidth: 4,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.xl,
+  },
+  dayPillText: {
+    fontSize: Typography.small,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  dayOfTotal: {
+    fontSize: Typography.small,
+  },
   pageTitle: {
     fontSize: Typography.headline,
     fontWeight: "700",
@@ -619,17 +751,19 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: Typography.body,
-    marginBottom: Spacing.xs,
+    lineHeight: 22,
+    opacity: 0.95,
   },
   logHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: Spacing.md,
+    marginTop: Spacing.xs,
   },
   logTitle: {
-    fontSize: Typography.title,
-    fontWeight: "700",
+    fontSize: Typography.body,
+    fontWeight: "600",
   },
   exerciseCard: {
     borderRadius: Radius.lg,
@@ -725,6 +859,15 @@ const styles = StyleSheet.create({
     right: 0,
     paddingHorizontal: PAGE_CONTENT_PADDING,
     paddingTop: Spacing.md,
+  },
+  startButtonHero: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.lg,
+    borderRadius: Radius.full,
+    marginTop: Spacing.lg,
   },
   startButton: {
     flexDirection: "row",

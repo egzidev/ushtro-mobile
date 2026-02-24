@@ -25,6 +25,12 @@ type AppHeaderProps = {
   largeTitle?: boolean;
   /** Optional element rendered on the right side of the header */
   rightAction?: React.ReactNode;
+  /** Transparent background (e.g. over hero image) */
+  transparent?: boolean;
+  /** Show only back button, no title */
+  backOnly?: boolean;
+  /** Override back icon color (e.g. "#fff" over image) */
+  backIconColor?: string;
 };
 
 export function AppHeader({
@@ -34,6 +40,9 @@ export function AppHeader({
   onBack,
   largeTitle,
   rightAction,
+  transparent,
+  backOnly,
+  backIconColor,
 }: AppHeaderProps) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -43,6 +52,7 @@ export function AppHeader({
   const displayText = greeting ?? title ?? "Ushtro";
   const paddingTop = Math.max(insets.top, Spacing.lg);
   const paddingBottom = Spacing.lg;
+  const iconColor = backIconColor ?? colors.text;
 
   const handleBack = () => {
     if (onBack) onBack();
@@ -54,7 +64,7 @@ export function AppHeader({
       style={[
         styles.container,
         {
-          backgroundColor: colors.background,
+          backgroundColor: transparent ? "transparent" : colors.background,
           paddingTop,
           paddingBottom,
         },
@@ -72,23 +82,27 @@ export function AppHeader({
             <MaterialIcons
               name={Platform.OS === "ios" ? "chevron-left" : "arrow-back"}
               size={Platform.OS === "ios" ? 28 : 24}
-              color={colors.text}
+              color={iconColor}
             />
           </TouchableOpacity>
         ) : null}
-        <Text
-          style={[
-            largeTitle && !showBack ? styles.titleLarge : styles.title,
-            {
-              color: colors.text,
-              flex: 1,
-            },
-          ]}
-          numberOfLines={1}
-          accessibilityRole="header"
-        >
-          {displayText}
-        </Text>
+        {!backOnly ? (
+          <Text
+            style={[
+              largeTitle && !showBack ? styles.titleLarge : styles.title,
+              {
+                color: transparent ? iconColor : colors.text,
+                flex: 1,
+              },
+            ]}
+            numberOfLines={1}
+            accessibilityRole="header"
+          >
+            {displayText}
+          </Text>
+        ) : (
+          <View style={{ flex: 1 }} />
+        )}
         {rightAction}
       </View>
     </View>
